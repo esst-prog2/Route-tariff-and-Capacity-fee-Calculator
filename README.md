@@ -11,29 +11,29 @@ I open the app in the browser, I am on the "Route Tariff Calculator" tab and sel
 I switch to the "Capacity Fee Calculator" tab and enter a requested capacity of 50,000 kWh/d for the network point "Kiskundorozsma 2", select the Transmission System Operator "FGSZ", and the product instrument: 2026 Q4. The app calculates the exact total cost in the given currency: XXX HUF, and below it, a breakdown showing the calculated monthly invoice XXX HUF.
 
 ## 2. The shape
-in: a CSV/Excel export of network capacity tariffs, plus a user query specifying origin point, destination point, booking period, TSO, product instrument 
-out: an optimized unit tariff breakdown, the total calculated cost for the requested volume
-on screen: Two tabs, on the first one a calculator panel with dropdowns for network points, dates and a results dashboard showing the optimal product combination in EUR/MWh. On the other tab an input field for the capacity volume, network point, TSO, product instrument and a results dashboard showing the cost of the capacity, and the calculated invoice for a month.
+* in: a CSV/Excel export of network capacity tariffs, plus a user query specifying origin point, destination point, booking period, TSO, product instrument 
+* out: an optimized unit tariff breakdown, the total calculated cost for the requested volume
+* on screen: Two tabs, on the first one a calculator panel with dropdowns for network points, dates and a results dashboard showing the optimal product combination in EUR/MWh. On the other tab an input field for the capacity volume, network point, TSO, product instrument and a results dashboard showing the cost of the capacity, and the calculated invoice for a month.
 
 ## 3. The size
 ### What the first useful version does:
-Parse and load the standard tariff Excel/CSV file into a queryable structure.
-Find the optimal combination of yearly/monthly/daily tariff for a specific time period.
-Calculate the total payable fee based on a user-defined capacity volume and break it down into monthly costs.
+* Parse and load the standard tariff Excel/CSV file into a queryable structure.
+* Find the optimal combination of yearly/monthly/daily tariff for a specific time period.
+* Calculate the total payable fee based on a user-defined capacity volume and break it down into monthly costs.
 
 ### What it explicitly does not do this term:
-Live API integration with ENTSOG, Regional Booking Platform or TSO websites for automatic data fetching (files will be uploaded manually).
-Multi-currency conversion via real-time external exchange APIs (it calculates in the source currency).
-Multi-node route optimization (it will calculate costs for one specified network point at a time, not a full cross-border route, the route's sum of tariffs would be presented only).
-Calculating the necessary financial security that needs to be held at the TSO by the System User for a given capacity booking request.
-Doesn't calculate with within-day capacity products.
+*Live API integration with ENTSOG, Regional Booking Platform or TSO websites for automatic data fetching (files will be uploaded manually).
+*Multi-currency conversion via real-time external exchange APIs (it calculates in the source currency).
+* Multi-node route optimization (it will calculate costs for one specified network point at a time, not a full cross-border route, the route's sum of tariffs would be presented only).
+* Calculating the necessary financial security that needs to be held at the TSO by the System User for a given capacity booking request.
+* Doesn't calculate with within-day capacity products.
 
 ## 4. How we would know it works
-Given a specific capacity volume for a quarterly period, the sum of the generated monthly cost breakdown equals the exact calculated total cost.
-Given a not acceptable route, instead of crashing, it displays a message saying the route is not possible.
-Given a booking request that crosses the October 1st gas year boundary, it correctly splits the period, applying the old tariff up to September 30 and the new tariff from October 1 onwards.
+* Given a specific capacity volume for a quarterly period, the sum of the generated monthly cost breakdown equals the exact calculated total cost.
+* Given a not acceptable route, instead of crashing, it displays a message saying the route is not possible.
+* Given a booking request that crosses the October 1st gas year boundary, it correctly splits the period, applying the old tariff up to September 30 and the new tariff from October 1 onwards.
 
 ## 5. What could stop this
-The logic for mixing different countries and TSOs capacity fee calculators might have too many irregular methods to put all together in the same way.
-The structure of the source Excel file might be inconsistent (e.g., unexpected empty cells,) which could break the parser.
-Handling leap years and exact timezone boundaries in the booking period to parsing might prove unexpectedly complex.
+* The logic for mixing different countries and TSOs capacity fee calculators might have too many irregular methods to put all together in the same way.
+* The structure of the source Excel file might be inconsistent (e.g., unexpected empty cells,) which could break the parser.
+* Handling leap years and exact timezone boundaries in the booking period to parsing might prove unexpectedly complex.
