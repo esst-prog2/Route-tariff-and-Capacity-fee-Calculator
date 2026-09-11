@@ -22,8 +22,8 @@ I switch to the "Capacity Fee Calculator" tab and enter a requested capacity of 
 * Calculate the total payable fee based on a user-defined capacity volume and break it down into monthly costs.
 
 ### What it explicitly does not do this term:
-*Live API integration with ENTSOG, Regional Booking Platform or TSO websites for automatic data fetching (files will be uploaded manually).
-*Multi-currency conversion via real-time external exchange APIs (it calculates in the source currency).
+* Live API integration with ENTSOG, Regional Booking Platform or TSO websites for automatic data fetching (files will be uploaded manually).
+* Multi-currency conversion via real-time external exchange APIs (it calculates in the source currency).
 * Multi-node route optimization (it will calculate costs for one specified network point at a time, not a full cross-border route, the route's sum of tariffs would be presented only).
 * Calculating the necessary financial security that needs to be held at the TSO by the System User for a given capacity booking request.
 * Doesn't calculate with within-day capacity products.
