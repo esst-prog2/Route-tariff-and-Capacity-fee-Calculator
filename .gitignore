@@ -1,0 +1,9 @@
+# Private tariff exports must never be committed; only the synthetic sample is.
+data/private/
+*.xlsx
+!data/sample/*.xlsx
+
+__pycache__/
+.pytest_cache/
+*.pyc
+.venv/
