@@ -7,8 +7,11 @@ I work in the system usage department of a natural gas trading company. To trans
 **The objective of the project is to develop an application or interface that quickly, clearly, and simply provides traders with the relevant costs. This will not only support their daily work, but also significantly reduce our department's workload.**
 
 ## 1. The demo
-I open the app in the browser, I am on the "Route Tariff Calculator" tab and select the origin network point "Kiskundorozsma 2", destination network point "UGS Chiren". I input a date range for capacity booking: 2026.12.05 - 2027.01.15. The screen instantly displays the calculated optimal (cheapest) tariff in EUR/MWh, comparing the cost of buying strictly daily products versus a combination of monthly and daily products. 
-I switch to the "Capacity Fee Calculator" tab and enter a requested capacity of 50,000 kWh/d for the network point "Kiskundorozsma 2", select the Transmission System Operator "FGSZ", and the product instrument: 2026 Q4. The app calculates the exact total cost in the given currency: XXX HUF, and below it, a breakdown showing the calculated monthly invoice XXX HUF.
+The MVP works with FGSZ (Hungary) Firm capacity at 12 cross-border points (7 entries, 5 exits); every calculation below is HUF-based and uses the synthetic sample in `data/sample/`. Run it with `python -m streamlit run app.py`.
+
+**Route Tariff Calculator.** I open the app in the browser and stay on the "Route Tariff Calculator" tab. TSO: FGSZ. Entry point "Mosonmagyaróvár (21Z000000000003C)", exit point "Kiskundorozsma (21Z000000000154S)", booking period 2026-10-01 to 2027-03-31 (both dates inclusive). I type today's FX rate, for example 400 HUF per EUR. The screen shows the cheapest combination of quarterly, monthly and daily products for entry + exit together: Q4 as one quarterly product, then January, February and March as monthly products, with a "Tariff used" column showing which tariff row each price came from. With the sample data the route costs 4134.1287 HUF per kWh/h, which is 946.4580 HUF/MWh or 2.3661 EUR/MWh at 400 HUF/EUR, against 4.0796 EUR/MWh if every day were booked as a daily product (a saving of 2993.8050 HUF per kWh/h). Without an FX rate the HUF figures are still shown and the EUR/MWh column is left out.
+
+**Capacity Fee Calculator.** I switch to the "Capacity Fee Calculator" tab. TSO: FGSZ, network point "Kiskundorozsma 2 RS>HU (21Z000000000505P)", product instrument "Quarter", 2026 Q4, requested capacity 50,000 kWh/d. The app converts it to 2083.33 kWh/h and calculates the total: 1,565,115 HUF, with the monthly invoice below it: October 527,376 HUF, November 510,363 HUF, December 527,376 HUF (split by calendar days, adding up exactly to the total).
 
 ## 2. The shape
 * in: a CSV/Excel export of network capacity tariffs, plus a user query specifying origin point, destination point, booking period, TSO, product instrument 
@@ -20,7 +23,7 @@ I switch to the "Capacity Fee Calculator" tab and enter a requested capacity of 
 * Parse and load the standard tariff Excel/CSV file into a queryable structure.
 * Find the optimal combination of yearly/monthly/daily tariff for a specific time period, for it to be the cheapest way.
 * Calculate the total payable fee based on a user-defined capacity volume and break it down into monthly costs.
-* Uses the data of 3 TSOs
+* Uses the data of one TSO, FGSZ, in the MVP (the other TSOs are deferred)
 
 ### What it explicitly does not do this term:
 * Live API integration with ENTSOG, Regional Booking Platform or TSO websites for automatic data fetching (files will be uploaded manually).
@@ -40,3 +43,11 @@ I switch to the "Capacity Fee Calculator" tab and enter a requested capacity of 
 * Handling leap years and exact timezone boundaries in the booking period to parsing might prove unexpectedly complex.
 
 The database is not public so a sythetic sample with the same columns will be used, with the real export hidden.
+
+## Running the MVP
+```
+pip install -r requirements.txt
+python -m streamlit run app.py     # uses the synthetic sample in data/sample/
+python -m pytest                   # unit, app and acceptance tests
+```
+To use the real export, keep it in `data/private/` (git-ignored, never committed) and point the app at it with the `FGSZ_TARIFF_FILE` environment variable, or upload it in the sidebar for one session. The parser reports missing columns and unusable rows in plain language instead of crashing.
