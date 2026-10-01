@@ -1,39 +1,4 @@
-# route-tariff-calculator Specification
-
-## Purpose
-
-Lets a trader pick an FGSZ entry point, an FGSZ exit point and a booking period, and see the cheapest combination of quarterly, monthly and daily capacity products for that route, with the cost expressed per kWh/h, per MWh and (given an FX rate) in EUR/MWh.
-
-## Requirements
-
-### Requirement: Route inputs
-The Route Tariff Calculator tab SHALL take a TSO, one entry point, one exit point, a booking start date and a booking end date. Both dates are inclusive and are calendar dates only, with no times and no time zones. A route is one entry point plus one exit point of the same TSO.
-
-#### Scenario: Inputs offered
-- **WHEN** the tab is opened
-- **THEN** it shows a TSO dropdown, an entry dropdown with 7 points, an exit dropdown with 5 points, a start date and an end date
-
-### Requirement: Route validity
-The system SHALL reject a request with a clear message, without failing, when: the end date is before the start date; a date is blank or invalid; the entry and exit have the same EIC (the same physical point); or no tariff row applies to the entry or to the exit on some date of the period.
-
-#### Scenario: End before start
-- **WHEN** the end date is before the start date
-- **THEN** the tab shows a message that the period is invalid and shows no result
-
-#### Scenario: Same physical point
-- **WHEN** the entry is Csanádpalota (RO>HU) and the exit is Csanádpalota (HU>RO)
-- **THEN** the tab shows a message that the route is not possible
-
-#### Scenario: No tariff for the dates
-- **WHEN** the period starts before the earliest tariff row of the entry point
-- **THEN** the tab shows a message that no tariff exists for those dates, naming the point
-
-### Requirement: Route price
-For any product and period, the route price SHALL be the entry price plus the exit price for that same product, each taken from the tariff row valid on the period's first day. All prices are HUF per 1 kWh/h for the whole product period.
-
-#### Scenario: Summing entry and exit
-- **WHEN** the entry monthly price for December is 400 and the exit monthly price for December is 300
-- **THEN** the route monthly price for December is 700
+## MODIFIED Requirements
 
 ### Requirement: Optimization
 The system SHALL find the cheapest way to cover every day of the booking period from calendar-aligned quarterly, monthly and daily products, using route prices and one shared product choice for entry and exit. A monthly or quarterly product MAY cover days outside the booking period (over-booking) when that is cheaper than covering only the requested days. The system SHALL work in HUF and never depend on the FX rate. The rules are:
@@ -100,25 +65,3 @@ The HUF/MWh figure SHALL be the total route price in HUF per kWh/h divided by (2
 #### Scenario: Over-booked days are not counted
 - **WHEN** the period is 2026-10-02 to 2026-12-30 (90 days) and the result books the whole of Q4 (92 days)
 - **THEN** the HUF/MWh figure divides by 24 x 90, not 24 x 92
-
-### Requirement: FX rate box
-The tab SHALL have an input box for the day's HUF-per-EUR rate. It SHALL start blank and be required for EUR figures: with no rate, the route cost in HUF is shown and the EUR/MWh figure is not. With a valid positive rate, EUR/MWh SHALL equal HUF/MWh divided by the rate and SHALL be shown together with the rate used ("at 1 EUR = X HUF"). A zero, negative or non-numeric rate SHALL show a message and no EUR figure.
-
-#### Scenario: No rate entered
-- **WHEN** a result is shown and the FX box is blank
-- **THEN** HUF figures are shown and the EUR/MWh figure is not
-
-#### Scenario: Rate entered
-- **WHEN** the rate 400 is entered and HUF/MWh is exactly 2128.4
-- **THEN** EUR/MWh is 5.3210 (2128.4 / 400) and "at 1 EUR = 400 HUF" is shown
-
-#### Scenario: Invalid rate
-- **WHEN** the rate is 0 or "abc"
-- **THEN** a message says the rate must be a positive number and no EUR figure is shown
-
-### Requirement: Display precision
-The tab SHALL show EUR/MWh, HUF/MWh and HUF per kWh/h with 4 decimals. Rounding is for display only and SHALL NOT influence which products the optimizer chooses.
-
-#### Scenario: Four decimals
-- **WHEN** EUR/MWh is 5.32100000
-- **THEN** it is displayed as 5.3210

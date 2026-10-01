@@ -1,4 +1,5 @@
-"""Cheapest quarterly / monthly / daily booking combination for a period.
+"""Cheapest quarterly / monthly / daily booking combination for a period,
+allowing products to over-book days outside it when that is cheaper.
 
 The optimizer is pure: it asks a `PriceOracle` for prices (already summed for
 a route) and never sees currencies or exchange rates, so its choice cannot
@@ -32,6 +33,10 @@ class PriceOracle(Protocol):
         ...
 
 
+class PriceUnavailable(Exception):
+    """Raised by an oracle when no tariff applies on a product's first day."""
+
+
 @dataclass(frozen=True)
 class Segment:
     start: date
@@ -39,6 +44,11 @@ class Segment:
     product: str
     price: Fraction
     tariff_used: str
+
+    def days_outside(self, start: date, end: date) -> int:
+        """Days this product covers outside the requested period [start, end]."""
+        inside = (min(self.end, end) - max(self.start, start)).days + 1
+        return periods.days_in_period(self.start, self.end) - max(inside, 0)
 
 
 @dataclass(frozen=True)
@@ -54,19 +64,27 @@ class Plan:
         return periods.days_in_period(self.start, self.end)
 
     @property
+    def days_outside(self) -> int:
+        """Over-booked days: paid for but outside the requested period."""
+        return sum(seg.days_outside(self.start, self.end) for seg in self.segments)
+
+    @property
     def saving(self) -> Fraction:
         return self.all_daily_total - self.total
 
 
 def optimize(start: date, end: date, oracle: PriceOracle) -> Plan:
-    """Cheapest cover of [start, end] (inclusive). Ties prefer the coarser
-    product: quarter over months over days.
+    """Cheapest way to cover every day of [start, end] (inclusive). A monthly
+    or quarterly product may also cover days outside the period (over-booking)
+    when that is cheaper. Ties prefer the coarser product: quarter over months
+    over days.
 
-    1. A full calendar month costs min(monthly, sum of its daily prices).
-    2. A partly covered month is priced day by day.
-    3. A fully covered calendar quarter costs min(quarterly, the sum of its
-       three months as priced by 1).
-    Each monthly or quarterly product uses the row valid on its first day."""
+    1. Each calendar month touched costs min(monthly, the daily prices of its
+       requested days).
+    2. Each calendar quarter touched costs min(quarterly, the sum of its
+       touched months as priced by 1).
+    Each monthly or quarterly product uses the row valid on its first day; one
+    that starts before the period and has no price there is not an option."""
     slices = periods.month_slices(start, end)
 
     month_choice: dict[tuple[int, int], tuple[str, Fraction]] = {}
@@ -74,23 +92,19 @@ def optimize(start: date, end: date, oracle: PriceOracle) -> Plan:
     for s in slices:
         daily_sum = sum((oracle.day_price(d) for d in periods.iter_days(s.first, s.last)), Fraction(0))
         all_daily_total += daily_sum
-        if s.full:
-            monthly = oracle.month_price(s.year, s.month)
-            month_choice[(s.year, s.month)] = (MONTHLY, monthly) if monthly <= daily_sum else (DAILY, daily_sum)
-        else:
-            month_choice[(s.year, s.month)] = (DAILY, daily_sum)
+        monthly = _optional_price(lambda: oracle.month_price(s.year, s.month))
+        month_choice[(s.year, s.month)] = (
+            (MONTHLY, monthly) if monthly is not None and monthly <= daily_sum else (DAILY, daily_sum)
+        )
 
-    full_months = {(s.year, s.month) for s in slices if s.full}
-    quarter_price: dict[tuple[int, int], Fraction] = {}
+    quarter_months: dict[tuple[int, int], list[tuple[int, int]]] = {}
     for s in slices:
-        quarter = periods.quarter_of_month(s.month)
-        if (s.year, quarter) in quarter_price:
-            continue
-        months = periods.quarter_months(s.year, quarter)
-        if all(m in full_months for m in months):
-            price = oracle.quarter_price(s.year, quarter)
-            if price <= sum((month_choice[m][1] for m in months), Fraction(0)):
-                quarter_price[(s.year, quarter)] = price
+        quarter_months.setdefault((s.year, periods.quarter_of_month(s.month)), []).append((s.year, s.month))
+    quarter_price: dict[tuple[int, int], Fraction] = {}
+    for key, months in quarter_months.items():
+        price = _optional_price(lambda: oracle.quarter_price(*key))
+        if price is not None and price <= sum((month_choice[m][1] for m in months), Fraction(0)):
+            quarter_price[key] = price
 
     segments: list[Segment] = []
     emitted_quarters: set[tuple[int, int]] = set()
@@ -105,8 +119,19 @@ def optimize(start: date, end: date, oracle: PriceOracle) -> Plan:
                 )
             continue
         product, price = month_choice[(s.year, s.month)]
-        used_last = s.first if product == MONTHLY else s.last
-        segments.append(Segment(s.first, s.last, product, price, oracle.tariff_used(s.first, used_last)))
+        if product == MONTHLY:
+            first, last = periods.month_first(s.year, s.month), periods.month_last(s.year, s.month)
+            segments.append(Segment(first, last, MONTHLY, price, oracle.tariff_used(first, first)))
+        else:
+            segments.append(Segment(s.first, s.last, DAILY, price, oracle.tariff_used(s.first, s.last)))
 
     total = sum((seg.price for seg in segments), Fraction(0))
     return Plan(start, end, tuple(segments), total, all_daily_total)
+
+
+def _optional_price(get_price) -> Fraction | None:
+    """The price, or None when no tariff applies on the product's first day."""
+    try:
+        return get_price()
+    except PriceUnavailable:
+        return None

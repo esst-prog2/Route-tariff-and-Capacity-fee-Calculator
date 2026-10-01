@@ -98,11 +98,16 @@ def route_tab(table) -> None:
                 "Segment": [dates_text(s.start, s.end) for s in plan.segments],
                 "Product": [s.product for s in plan.segments],
                 "HUF per kWh/h": [dec4(s.price) for s in plan.segments],
+                "Days outside period": [s.days_outside(plan.start, plan.end) for s in plan.segments],
                 "Tariff used": [s.tariff_used for s in plan.segments],
             }
         ),
         hide_index=True, width="stretch",
     )
+    if plan.days_outside:
+        st.info(f"Over-booking: the cheapest combination also covers {plan.days_outside} day(s) outside the "
+                "booking period, because a longer product costs less than covering only the booked days. "
+                "Per-MWh figures use the booked days only.")
 
     has_rate = result.fx_rate is not None
     rows = {

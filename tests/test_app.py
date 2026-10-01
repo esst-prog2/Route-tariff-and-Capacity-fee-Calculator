@@ -50,7 +50,7 @@ def test_tab1_shows_huf_without_a_rate_and_eur_with_one_in_four_decimals():
     segments, summary = frames(at)
     assert list(summary.columns) == ["", "HUF per kWh/h", "HUF/MWh"]  # no EUR column yet
     assert any("Enter today's HUF per EUR rate" in info.value for info in at.info)
-    assert list(segments.columns) == ["Segment", "Product", "HUF per kWh/h", "Tariff used"]
+    assert list(segments.columns) == ["Segment", "Product", "HUF per kWh/h", "Days outside period", "Tariff used"]
     assert segments["Tariff used"].str.contains("entry from").all()
     assert summary[""].tolist() == ["Cheapest combination", "All daily", "Saving"]
 
@@ -68,6 +68,20 @@ def test_tab1_invalid_rate_shows_a_message_and_no_eur_column():
     at.text_input(key="route_fx").set_value("abc").run()
     assert any("positive number" in warning.value for warning in at.warning)
     assert "EUR/MWh" not in frames(at)[1].columns
+
+
+def test_tab1_shows_over_booking_for_q4_minus_its_edge_days():
+    at = start_app()
+    assert not any("Over-booking" in info.value for info in at.info)  # the default period is exact quarters/months
+    at.date_input(key="route_start").set_value(date(2026, 10, 2))
+    at.date_input(key="route_end").set_value(date(2026, 12, 30)).run()
+    assert not at.exception
+    segments, summary = frames(at)
+    assert segments["Product"].tolist() == ["quarterly"]
+    assert segments["Segment"].tolist() == ["2026-10-01 to 2026-12-31"]
+    assert segments["Days outside period"].tolist() == [2]
+    assert summary["HUF per kWh/h"][0] == "2052.1344"  # the whole of Q4, not 3040.5 for exact cover
+    assert any("Over-booking" in info.value and "2 day(s)" in info.value for info in at.info)
 
 
 def test_tab1_saving_equals_all_daily_minus_cheapest():
