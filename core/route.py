@@ -11,7 +11,7 @@ from fractions import Fraction
 
 from . import periods
 from .money import parse_number
-from .optimizer import Plan, optimize
+from .optimizer import Plan, PriceUnavailable, optimize
 from .points import ENTRY, EXIT, Point
 from .tariffs import TariffRow, TariffTable
 
@@ -23,7 +23,7 @@ class RouteError:
     message: str
 
 
-class NoTariffError(Exception):
+class NoTariffError(PriceUnavailable):
     """Internal: no tariff row applies to a point on a date."""
 
     def __init__(self, point: Point, day: date):
