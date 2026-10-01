@@ -73,9 +73,11 @@ def test_period_crossing_1_october_splits_at_the_boundary_with_old_and_new_rows(
     table = make_table(
         make_row(eic=ENTRY.eic, direction="Entry", valid_from="2025-10-01", valid_to="2026-09-30", prices={"D_Sep": 10.0}),
         make_row(eic=EXIT.eic, direction="Exit", valid_from="2025-10-01", valid_to="2026-09-30", prices={"D_Sep": 5.0}),
-        make_row(eic=ENTRY.eic, direction="Entry", valid_from="2026-10-01", valid_to=None, prices={"D_Oct": 20.0}),
-        make_row(eic=EXIT.eic, direction="Exit", valid_from="2026-10-01", valid_to=None, prices={"D_Oct": 8.0}),
-    )
+        make_row(eic=ENTRY.eic, direction="Entry", valid_from="2026-10-01", valid_to=None,
+                 prices={"D_Oct": 20.0, "M_Oct": 1000.0}),
+        make_row(eic=EXIT.eic, direction="Exit", valid_from="2026-10-01", valid_to=None,
+                 prices={"D_Oct": 8.0, "M_Oct": 1000.0}),
+    )  # October's monthly price is dear, so the ten October days stay daily
     result = calculate_route(table, ENTRY, EXIT, date(2026, 9, 20), date(2026, 10, 10))
     assert [(s.start, s.end, s.product) for s in result.plan.segments] == [
         (date(2026, 9, 20), date(2026, 9, 30), DAILY),
@@ -86,6 +88,30 @@ def test_period_crossing_1_october_splits_at_the_boundary_with_old_and_new_rows(
     assert new.price == 10 * (20 + 8)   # October days at the new tariff
     assert "entry from 2025-10-01" in old.tariff_used and "(open-ended)" not in old.tariff_used
     assert "entry from 2026-10-01 (open-ended)" in new.tariff_used
+
+
+# --- over-booking ---------------------------------------------------------------------
+
+def test_quarter_minus_its_edge_days_books_the_whole_quarter_when_cheaper():
+    table = two_point_table(valid_from="2026-10-01", valid_to=None)  # route: Q 600, M 200, D 8
+    result = calculate_route(table, ENTRY, EXIT, date(2026, 10, 2), date(2026, 12, 30))
+    assert [(s.start, s.end, s.product) for s in result.plan.segments] == [
+        (date(2026, 10, 1), date(2026, 12, 31), QUARTERLY),
+    ]
+    assert result.plan.total == 600
+    assert result.plan.days_outside == 2
+    assert result.days == 90  # per-MWh figures still use the requested days
+
+
+def test_over_booking_product_without_a_tariff_on_its_first_day_is_skipped():
+    # Tariffs start on 2026-10-15, so neither October nor Q4 2026 can be priced.
+    table = two_point_table(valid_from="2026-10-15", valid_to=None)
+    result = calculate_route(table, ENTRY, EXIT, date(2026, 10, 15), date(2026, 11, 30))
+    assert isinstance(result, RouteResult)
+    assert [(s.start, s.end, s.product) for s in result.plan.segments] == [
+        (date(2026, 10, 15), date(2026, 10, 31), DAILY),
+        (date(2026, 11, 1), date(2026, 11, 30), MONTHLY),
+    ]
 
 
 def test_open_ended_row_prices_a_far_future_period():
