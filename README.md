@@ -7,7 +7,7 @@ I work in the system usage department of a natural gas trading company. To trans
 **The objective of the project is to develop an application or interface that quickly, clearly, and simply provides traders with the relevant costs. This will not only support their daily work, but also significantly reduce our department's workload.**
 
 ## 1. The demo
-The MVP works with FGSZ (Hungary) Firm capacity at 12 cross-border points (7 entries, 5 exits); every calculation below is HUF-based and uses the synthetic sample in `data/sample/`. Run it with `python -m streamlit run app.py`.
+The MVP works with FGSZ (Hungary) Firm capacity at 12 cross-border points (7 entries, 5 exits); every calculation below is HUF-based and uses the synthetic sample in `data/sample/`. Open it at https://route-tariff-and-capacity-fee-calculator.streamlit.app (or run it locally, see [Running the MVP](#running-the-mvp)).
 
 **Route Tariff Calculator.** I open the app in the browser and stay on the "Route Tariff Calculator" tab. TSO: FGSZ. Entry point "Mosonmagyaróvár (21Z000000000003C)", exit point "Kiskundorozsma (21Z000000000154S)", booking period 2026-10-01 to 2027-03-31 (both dates inclusive). I type today's FX rate, for example 400 HUF per EUR. The screen shows the cheapest combination of quarterly, monthly and daily products for entry + exit together: Q4 as one quarterly product, then January, February and March as monthly products, with a "Tariff used" column showing which tariff row each price came from. With the sample data the route costs 4134.1287 HUF per kWh/h, which is 946.4580 HUF/MWh or 2.3661 EUR/MWh at 400 HUF/EUR, against 4.0796 EUR/MWh if every day were booked as a daily product (a saving of 2993.8050 HUF per kWh/h). Without an FX rate the HUF figures are still shown and the EUR/MWh column is left out. If the period misses a few days at the edge of a month or quarter, the optimiser may **over-book**: it buys the whole month or quarter when that is cheaper than covering only the booked days. For example, 2026-10-02 to 2026-12-30 is booked as the whole of Q4 for 2052.1344 HUF per kWh/h instead of 3040.4524 when only the 90 booked days are covered; the table shows "2026-10-01 to 2026-12-31" with 2 days outside the period, and a note explains the over-booking. Per-MWh figures still divide by the booked days only.
 
@@ -45,6 +45,9 @@ The MVP works with FGSZ (Hungary) Firm capacity at 12 cross-border points (7 ent
 The database is not public so a sythetic sample with the same columns will be used, with the real export hidden.
 
 ## Running the MVP
+The app is hosted on Streamlit Community Cloud: **https://route-tariff-and-capacity-fee-calculator.streamlit.app**. It serves only the synthetic sample; never upload the real export there. If nobody has opened it for a while it shows a "gone to sleep" page; click the button to wake it (about a minute).
+
+To run it locally instead:
 ```
 pip install -r requirements.txt
 python -m streamlit run app.py     # uses the synthetic sample in data/sample/
