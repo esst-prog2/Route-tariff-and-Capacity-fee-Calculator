@@ -12,7 +12,7 @@ import streamlit as st
 
 from core import fee, money, periods, points
 from core.route import RouteError, calculate_route
-from core.tariffs import LoadResult, load_tariffs, resolve_tariff_path
+from core.tariffs import INTERRUPTIBLE, LoadResult, load_tariffs, resolve_tariff_path
 
 st.set_page_config(page_title="Route Tariff and Capacity Fee Calculator", layout="wide")
 
@@ -49,8 +49,8 @@ def load_data() -> tuple[LoadResult, str]:
 
 # --- formatting helpers ------------------------------------------------------------------
 
-def dec4(value: Fraction) -> str:
-    return money.format_decimal(value, 4)
+def dec4(value: Fraction | None) -> str:
+    return "" if value is None else money.format_decimal(value, 4)
 
 
 def plain_rate(rate: Fraction) -> str:
@@ -65,13 +65,9 @@ def dates_text(start: date, end: date) -> str:
 # --- tab 1 -----------------------------------------------------------------------------------
 
 def route_tab(table) -> None:
-    st.selectbox("TSO", points.TSOS, key="route_tso")
-    entries, exits = points.entries(), points.exits()
-    default_exit = next((i for i, p in enumerate(exits) if p.name == "Kiskundorozsma"), 0)
-
     left, right = st.columns(2)
-    entry = left.selectbox("Entry point", entries, format_func=lambda p: p.route_label(), key="route_entry")
-    exit_ = right.selectbox("Exit point", exits, index=default_exit, format_func=lambda p: p.route_label(), key="route_exit")
+    begin = left.selectbox("Route beginning", points.COUNTRIES, index=points.COUNTRIES.index("BG"), key="route_begin")
+    end_country = right.selectbox("Route ending", points.COUNTRIES, index=points.COUNTRIES.index("HU"), key="route_end_country")
 
     left, right = st.columns(2)
     start = left.date_input("Booking start (inclusive)", value=date(2026, 10, 1), min_value=date(2000, 1, 1),
@@ -79,69 +75,107 @@ def route_tab(table) -> None:
     end = right.date_input("Booking end (inclusive)", value=date(2027, 3, 31), min_value=date(2000, 1, 1),
                            max_value=date(2100, 12, 31), format="YYYY-MM-DD", key="route_end")
 
-    fx_text = st.text_input("FX rate (HUF per 1 EUR)", value="", placeholder="e.g. 400", key="route_fx",
-                            help="Type today's rate. EUR/MWh is shown once a rate is entered.")
+    fx_text = ""
+    if begin != end_country and "HU" in (begin, end_country):
+        fx_text = st.text_input("FX rate (HUF per 1 EUR)", value="", placeholder="e.g. 400", key="route_fx",
+                                help="Type today's rate. FGSZ's and the route's EUR/MWh are shown once a rate is entered.")
 
-    result = calculate_route(table, entry, exit_, start, end, fx_text)
+    result = calculate_route(table, begin, end_country, start, end, fx_text)
     if isinstance(result, RouteError):
         st.error(result.message)
         return
 
-    plan = result.plan
-    st.subheader(f"{entry.cleaned_name} to {exit_.cleaned_name}")
-    st.caption(f"Booking period {dates_text(plan.start, plan.end)} ({plan.days} days). "
-               "Prices are entry + exit, in HUF per 1 kWh/h for the product period.")
+    st.subheader(f"{begin} to {end_country}")
+    st.caption(f"Booking period {dates_text(start, end)} ({result.days} days), hub to hub.")
 
+    st.markdown("**Network points on the route**")
+    capacity_types = [table.capacity_type(*p.key) for p in result.points]
     st.dataframe(
         pd.DataFrame(
             {
-                "Segment": [dates_text(s.start, s.end) for s in plan.segments],
-                "Product": [s.product for s in plan.segments],
-                "HUF per kWh/h": [dec4(s.price) for s in plan.segments],
-                "Days outside period": [s.days_outside(plan.start, plan.end) for s in plan.segments],
-                "Tariff used": [s.tariff_used for s in plan.segments],
+                "#": list(range(1, len(result.points) + 1)),
+                "TSO": [p.tso_name for p in result.points],
+                "Point": [p.cleaned_name for p in result.points],
+                "EIC": [p.eic for p in result.points],
+                "Direction": [p.direction for p in result.points],
+                "Capacity type": capacity_types,
             }
         ),
         hide_index=True, width="stretch",
     )
-    if plan.days_outside:
-        st.info(f"Over-booking: the cheapest combination also covers {plan.days_outside} day(s) outside the "
-                "booking period, because a longer product costs less than covering only the booked days. "
-                "Per-MWh figures use the booked days only.")
+    if INTERRUPTIBLE in capacity_types:
+        st.warning("Interruptible capacity is used where a point has no Firm tariff; "
+                   "the TSO can interrupt it.")
 
-    has_rate = result.fx_rate is not None
-    rows = {
-        "Cheapest combination": (plan.total, result.huf_per_mwh, result.eur_per_mwh),
-        "All daily": (plan.all_daily_total, result.all_daily_huf_per_mwh, result.all_daily_eur_per_mwh),
-        "Saving": (
-            plan.saving,
-            result.all_daily_huf_per_mwh - result.huf_per_mwh,
-            None if not has_rate else result.all_daily_eur_per_mwh - result.eur_per_mwh,
+    for leg in result.legs:
+        unit_text = f"{leg.currency} per {leg.unit}"
+        names = ", ".join(f"{p.direction.lower()} {p.cleaned_name}" for p in leg.points)
+        st.markdown(f"**{leg.tso_name}**: {names}. Prices in {unit_text} for the product period.")
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "Segment": [dates_text(s.start, s.end) for s in leg.plan.segments],
+                    "Product": [s.product for s in leg.plan.segments],
+                    unit_text: [dec4(s.price) for s in leg.plan.segments],
+                    "Days outside period": [s.days_outside(leg.plan.start, leg.plan.end) for s in leg.plan.segments],
+                    "Tariff used": [s.tariff_used for s in leg.plan.segments],
+                }
+            ),
+            hide_index=True, width="stretch",
+        )
+
+    over_booked = [f"{leg.tso_name} {leg.plan.days_outside} day(s)" for leg in result.legs if leg.plan.days_outside]
+    if over_booked:
+        st.info(f"Over-booking: {', '.join(over_booked)} outside the booking period, because a longer product "
+                "costs less than covering only the booked days. Per-MWh figures use the booked days only.")
+
+    st.markdown("**Summary per TSO**")
+    st.dataframe(
+        pd.DataFrame(
+            {
+                "TSO": [leg.tso_name for leg in result.legs],
+                "Unit": [f"{leg.currency} per {leg.unit}" for leg in result.legs],
+                "Cheapest": [dec4(leg.plan.total) for leg in result.legs],
+                "All daily": [dec4(leg.plan.all_daily_total) for leg in result.legs],
+                "Saving": [dec4(leg.plan.saving) for leg in result.legs],
+                "Per MWh": [f"{dec4(leg.per_mwh)} {leg.currency}/MWh" for leg in result.legs],
+                "EUR/MWh": [dec4(leg.eur_per_mwh) for leg in result.legs],
+            }
         ),
-    }
-    summary = {"": list(rows), "HUF per kWh/h": [dec4(v[0]) for v in rows.values()],
-               "HUF/MWh": [dec4(v[1]) for v in rows.values()]}
-    if has_rate:
-        summary["EUR/MWh"] = [dec4(v[2]) for v in rows.values()]
-    st.dataframe(pd.DataFrame(summary), hide_index=True, width="stretch")
+        hide_index=True, width="stretch",
+    )
 
-    if has_rate:
-        st.caption(f"EUR/MWh at 1 EUR = {plain_rate(result.fx_rate)} HUF. "
-                   "HUF/MWh assumes the booked capacity is used fully (24 h x days).")
+    if result.eur_per_mwh is not None:
+        st.markdown("**Route total (EUR/MWh)**")
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "": ["Cheapest combination", "All daily", "Saving"],
+                    "EUR/MWh": [dec4(result.eur_per_mwh), dec4(result.all_daily_eur_per_mwh),
+                                dec4(result.saving_eur_per_mwh)],
+                }
+            ),
+            hide_index=True, width="stretch",
+        )
+        note = "Per-MWh figures assume the booked capacity is used fully on the booked days."
+        if result.fx_rate is not None:
+            note = f"FGSZ's EUR/MWh at 1 EUR = {plain_rate(result.fx_rate)} HUF. " + note
+        st.caption(note)
     elif result.fx_message:
         st.warning(result.fx_message)
     else:
-        st.info("Enter today's HUF per EUR rate to see EUR/MWh.")
+        st.info("Enter today's HUF per EUR rate to see FGSZ's and the route's EUR/MWh.")
 
 
 # --- tab 2 -----------------------------------------------------------------------------------
 
 def fee_tab(table) -> None:
     today = date.today()
-    st.selectbox("TSO", points.TSOS, key="fee_tso")
-    default_point = next((i for i, p in enumerate(points.POINTS) if p.name == "Kiskundorozsma 2"), 0)
-    point = st.selectbox("Network point", points.POINTS, index=default_point,
-                         format_func=lambda p: p.fee_label(), key="fee_point")
+    tso = st.selectbox("TSO", points.TSOS, format_func=points.tso_name, key="fee_tso")
+    tso_points = points.points_of(tso)
+    default_point = next((i for i, p in enumerate(tso_points) if p.name == "Kiskundorozsma 2"), 0)
+    point = st.selectbox("Network point", tso_points, index=default_point,
+                         format_func=lambda p: p.fee_label(table.capacity_type(*p.key)), key=f"fee_point_{tso}")
     instrument = st.selectbox("Product instrument", fee.INSTRUMENTS, index=fee.INSTRUMENTS.index(fee.QUARTER),
                               format_func=fee.INSTRUMENT_LABELS.get, key="fee_instrument")
 
@@ -179,17 +213,23 @@ def fee_tab(table) -> None:
         st.warning(result.message)
         return
 
-    st.subheader(f"{point.fee_label()}: {fee.INSTRUMENT_LABELS[instrument].lower()} {dates_text(result.start, result.end)}")
+    currency = result.currency
+    st.subheader(f"{point.tso_name} {point.fee_label()}: "
+                 f"{fee.INSTRUMENT_LABELS[instrument].lower()} {dates_text(result.start, result.end)}")
     left, middle, right = st.columns(3)
-    left.metric("Capacity (kWh/h)", money.format_decimal(result.capacity_kwh_h, 2))
-    middle.metric(f"Price ({result.price_column}, HUF per kWh/h)", dec4(result.price))
-    right.metric("Total cost (HUF)", money.format_whole(result.total))
-    st.caption(f"Tariff used: {result.tariff_used}. All amounts are in HUF; the total is rounded to whole forints.")
+    left.metric(f"Capacity ({result.unit})", money.format_decimal(result.capacity, 2))
+    middle.metric(f"Price ({result.price_column}, {currency} per {result.unit})", dec4(result.price))
+    right.metric(f"Total cost ({currency})", money.format_amount(result.total, currency))
+    rounding = "whole forints" if money.CURRENCY_DECIMALS[currency] == 0 else "cents"
+    st.caption(f"Tariff used: {result.tariff_used}. All amounts are in {currency}; the total is rounded to {rounding}.")
+    if result.capacity_type == INTERRUPTIBLE:
+        st.warning("This point has no Firm tariff, so Interruptible capacity is priced; the TSO can interrupt it.")
 
-    lines = [(f"{line.year}-{line.month:02d}", line.days, money.format_whole(line.amount)) for line in result.invoice]
-    lines.append(("Total", sum(line.days for line in result.invoice), money.format_whole(result.total)))
+    lines = [(f"{line.year}-{line.month:02d}", line.days, money.format_amount(line.amount, currency))
+             for line in result.invoice]
+    lines.append(("Total", sum(line.days for line in result.invoice), money.format_amount(result.total, currency)))
     st.markdown("**Monthly invoice**")
-    st.dataframe(pd.DataFrame(lines, columns=["Month", "Days", "Amount (HUF)"]), hide_index=True, width="stretch")
+    st.dataframe(pd.DataFrame(lines, columns=["Month", "Days", f"Amount ({currency})"]), hide_index=True, width="stretch")
 
 
 # --- page ----------------------------------------------------------------------------------------
