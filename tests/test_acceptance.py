@@ -1,5 +1,5 @@
 """Acceptance tests: the README's "how we would know it works" checks and the
-extra ones added for this change, run through the public `core` API."""
+extra ones added since, run through the public `core` API on corridor routes."""
 
 from datetime import date
 from itertools import product
@@ -21,8 +21,12 @@ def sample():
     return result.table
 
 
-def point(name, direction):
-    return next(p for p in points.POINTS if p.name == name and p.direction == direction)
+def point(tso, name, flow):
+    return next(p for p in points.POINTS if (p.tso, p.name, p.flow) == (tso, name, flow))
+
+
+def leg(result, tso):
+    return next(l for l in result.legs if l.tso == tso)
 
 
 # 1. Given a quarterly period, the monthly breakdown sums exactly to the total.
@@ -38,78 +42,76 @@ def test_monthly_breakdown_sums_to_the_exact_total_for_every_point_and_instrumen
     ]):
         start, end = fee.resolve_period(instrument, **selection)
         result = fee.calculate_fee(sample, p, instrument, start, end, capacity)
-        assert isinstance(result, fee.FeeResult), (p.cleaned_name, instrument, result)
+        assert isinstance(result, fee.FeeResult), (p, instrument, result)
         assert sum(line.amount for line in result.invoice) == result.total
         checked += 1
-    assert checked == 12 * 5
+    assert checked == 30 * 5
 
 
 # 2. Given a route that is not possible, it shows a message instead of crashing.
-def test_every_entry_exit_combination_returns_a_result_or_a_message(sample):
+def test_every_country_pair_returns_a_result_or_a_message(sample):
     results = {
-        (e.cleaned_name, x.cleaned_name): calculate_route(sample, e, x, date(2026, 10, 1), date(2027, 3, 31))
-        for e, x in product(points.entries(), points.exits())
+        (a, b): calculate_route(sample, a, b, date(2026, 10, 1), date(2027, 3, 31), "400")
+        for a, b in product(points.COUNTRIES, repeat=2)
     }
-    assert len(results) == 35
     impossible = {k for k, v in results.items() if isinstance(v, RouteError)}
-    # Same physical point (same EIC) in both directions: Csanadpalota, Dravaszerdahely, Balassagyarmat, VIP Bereg
-    assert len(impossible) == 4
-    assert all(a.split(" (")[0] == b.split(" (")[0] for a, b in impossible)
+    assert impossible == {("HU", "HU"), ("RS", "RS"), ("BG", "BG")}
+    assert all("not possible" in results[k].message for k in impossible)
     assert all(isinstance(v, RouteResult) for k, v in results.items() if k not in impossible)
 
 
 def test_impossible_requests_are_messages_not_exceptions(sample):
-    entry, exit_ = point("Mosonmagyaróvár", "Entry"), point("Kiskundorozsma", "Exit")
     for args in [
-        (date(2026, 12, 31), date(2026, 12, 1)),   # end before start
-        (None, date(2026, 12, 1)),                 # blank date
-        (date(2001, 1, 1), date(2001, 1, 5)),      # before any tariff
+        ("BG", "HU", date(2026, 12, 31), date(2026, 12, 1)),   # end before start
+        ("BG", "HU", None, date(2026, 12, 1)),                 # blank date
+        ("BG", "HU", date(2025, 12, 1), date(2026, 1, 5)),     # before the Bulgartransgaz EUR rows
+        ("HU", "RS", date(2001, 1, 1), date(2001, 1, 5)),      # before any tariff
+        ("RS", "RS", date(2026, 12, 1), date(2026, 12, 5)),    # same country
     ]:
-        result = calculate_route(sample, entry, exit_, *args)
+        result = calculate_route(sample, *args)
         assert isinstance(result, RouteError) and result.message
-    same = calculate_route(sample, point("Csanádpalota", "Entry"), point("Csanádpalota", "Exit"),
-                           date(2026, 12, 1), date(2026, 12, 5))
-    assert isinstance(same, RouteError) and "not possible" in same.message
 
 
 # 3. Given a booking that crosses 1 October, old tariff up to 30 September, new one from 1 October.
 def test_period_crossing_the_gas_year_boundary_uses_old_then_new_tariff(sample):
-    entry, exit_ = point("Mosonmagyaróvár", "Entry"), point("Kiskundorozsma", "Exit")
-    result = calculate_route(sample, entry, exit_, date(2026, 9, 20), date(2026, 10, 10))
-    old, new = result.plan.segments
-    assert (old.start, old.end, new.start, new.end) == (date(2026, 9, 20), date(2026, 9, 30), date(2026, 10, 1), date(2026, 10, 10))
-    assert "entry from 2025-10-01" in old.tariff_used and "exit from 2025-10-01" in old.tariff_used
-    assert "entry from 2026-10-01" in new.tariff_used and "exit from 2026-10-01" in new.tariff_used
-    old_row = sample.find_row(entry.eic, "Entry", date(2026, 9, 30)), sample.find_row(exit_.eic, "Exit", date(2026, 9, 30))
-    new_row = sample.find_row(entry.eic, "Entry", date(2026, 10, 1)), sample.find_row(exit_.eic, "Exit", date(2026, 10, 1))
-    assert old.price == 11 * sum(r.day_price(9) for r in old_row)
-    assert new.price == 10 * sum(r.day_price(10) for r in new_row)
+    result = calculate_route(sample, "BG", "HU", date(2026, 9, 20), date(2026, 10, 10), "400")
+    for l in result.legs:
+        old, new = l.plan.segments
+        assert (old.start, old.end, new.start, new.end) == (
+            date(2026, 9, 20), date(2026, 9, 30), date(2026, 10, 1), date(2026, 10, 10))
+        assert "from 2026-10-01" not in old.tariff_used
+        assert new.tariff_used.count("from 2026-10-01 (open-ended)") == len(l.points)
+        old_rows = [sample.find_row(*p.key, date(2026, 9, 30)) for p in l.points]
+        new_rows = [sample.find_row(*p.key, date(2026, 10, 1)) for p in l.points]
+        assert old.price == 11 * sum(r.day_price(9) for r in old_rows)
+        assert new.price == 10 * sum(r.day_price(10) for r in new_rows)
 
 
 # 4. Open-ended rows apply to later dates.
 def test_open_ended_row_prices_dates_years_after_it_starts(sample):
-    entry, exit_ = point("Mosonmagyaróvár", "Entry"), point("Kiskundorozsma", "Exit")
-    result = calculate_route(sample, entry, exit_, date(2035, 3, 1), date(2035, 3, 31))
+    result = calculate_route(sample, "BG", "HU", date(2035, 3, 1), date(2035, 3, 31), "400")
     assert isinstance(result, RouteResult)
-    assert result.plan.segments[0].product == MONTHLY
-    assert "from 2026-10-01 (open-ended)" in result.plan.segments[0].tariff_used
-    p = point("Kiskundorozsma 2", "Entry")
+    for l in result.legs:
+        assert l.plan.segments[0].product == MONTHLY
+        assert "from 2026-10-01 (open-ended)" in l.plan.segments[0].tariff_used
     start, end = fee.resolve_period(fee.GAS_YEAR, gas_year=2035)
-    assert isinstance(fee.calculate_fee(sample, p, fee.GAS_YEAR, start, end, "50000"), fee.FeeResult)
+    for p in points.POINTS:
+        assert isinstance(fee.calculate_fee(sample, p, fee.GAS_YEAR, start, end, "50000"), fee.FeeResult), p
 
 
 # 5. The quarter-versus-three-months choice flips when the prices are swapped.
 def test_quarter_versus_three_months_flips_with_the_prices():
-    entry, exit_ = point("Mosonmagyaróvár", "Entry"), point("Kiskundorozsma", "Exit")
+    formats = {"FGSZ": {}, "Gastran": {"currency": "EUR"}, "BGTRGAZ": {"currency": "EUR", "unit": "kWh/d"}}
 
     def products(quarter_price):
-        half = quarter_price / 2
-        prices = {"Q4_Oct": half, "M_Oct": 50.0, "M_Nov": 50.0, "M_Dec": 50.0}  # entry + exit months = 300
-        table = make_table(
-            make_row(eic=entry.eic, direction="Entry", valid_from="2026-10-01", valid_to=None, prices=prices),
-            make_row(eic=exit_.eic, direction="Exit", valid_from="2026-10-01", valid_to=None, prices=prices),
-        )
-        return [s.product for s in calculate_route(table, entry, exit_, date(2026, 10, 1), date(2026, 12, 31)).plan.segments]
+        prices = {"Q4_Oct": quarter_price / 2, "M_Oct": 50.0, "M_Nov": 50.0, "M_Dec": 50.0}  # Gastrans months = 300
+        table = make_table(*[
+            make_row(eic=p.eic, direction=p.direction, operator=p.tso, valid_from="2026-10-01", valid_to=None,
+                     prices=prices, **formats[p.tso])
+            for p in points.route_points("BG", "HU")
+        ])
+        result = calculate_route(table, "BG", "HU", date(2026, 10, 1), date(2026, 12, 31))
+        return [s.product for s in leg(result, "Gastran").plan.segments]
 
     assert products(250) == [QUARTERLY]
     assert products(350) == [MONTHLY] * 3
@@ -117,18 +119,30 @@ def test_quarter_versus_three_months_flips_with_the_prices():
 
 # README demo (synthetic sample): guards the numbers quoted in README.md section 1.
 def test_readme_demo_figures(sample):
-    route = calculate_route(sample, point("Mosonmagyaróvár", "Entry"), point("Kiskundorozsma", "Exit"),
-                            date(2026, 10, 1), date(2027, 3, 31), "400")
+    route = calculate_route(sample, "BG", "HU", date(2026, 10, 1), date(2027, 3, 31), "400")
     fmt = lambda value: money.format_decimal(value, 4)
-    assert [s.product for s in route.plan.segments] == ["quarterly", "monthly", "monthly", "monthly"]
-    assert fmt(route.huf_per_kwh_h) == "4134.1287"
-    assert fmt(route.huf_per_mwh) == "946.4580"
-    assert fmt(route.eur_per_mwh) == "2.3661"
-    assert fmt(route.all_daily_eur_per_mwh) == "4.0796"
-    assert fmt(route.plan.saving) == "2993.8050"
+    assert [p.cleaned_name for p in route.points] == [
+        "Kireevo/Zaychar (BG>RS)", "Kireevo/Zaychar (BG>RS)", "Kiskundorozsma 2 (RS>HU)", "Kiskundorozsma 2 (RS>HU)",
+    ]
+    bg, gastrans, fgsz = route.legs
+    assert [s.product for s in bg.plan.segments] == ["quarterly", "quarterly"]
+    assert [s.product for s in gastrans.plan.segments] == ["quarterly", "monthly", "monthly", "monthly"]
+    assert [s.product for s in fgsz.plan.segments] == ["quarterly", "quarterly"]
+    assert (fmt(bg.plan.total), fmt(bg.eur_per_mwh)) == ("0.5253", "2.8863")
+    assert (fmt(gastrans.plan.total), fmt(gastrans.eur_per_mwh)) == ("19.3900", "4.4391")
+    assert (fmt(fgsz.plan.total), fmt(fgsz.per_mwh), fmt(fgsz.eur_per_mwh)) == ("1519.2871", "347.8221", "0.8696")
+    assert fmt(route.eur_per_mwh) == "8.1949"
+    assert fmt(route.all_daily_eur_per_mwh) == "14.0247"
+    assert fmt(route.saving_eur_per_mwh) == "5.8297"
+
+    over = calculate_route(sample, "BG", "HU", date(2026, 10, 2), date(2026, 12, 30), "400")
+    assert all(l.plan.days_outside == 2 for l in over.legs)
 
     start, end = fee.resolve_period(fee.QUARTER, year=2026, quarter=4)
-    result = fee.calculate_fee(sample, point("Kiskundorozsma 2", "Entry"), fee.QUARTER, start, end, "50000")
-    assert money.format_decimal(result.capacity_kwh_h, 2) == "2083.33"
+    result = fee.calculate_fee(sample, point("FGSZ", "Kiskundorozsma 2", "RS>HU"), fee.QUARTER, start, end, "50000")
+    assert money.format_decimal(result.capacity, 2) == "2083.33"
     assert result.total == 1_565_115
     assert [line.amount for line in result.invoice] == [527_376, 510_363, 527_376]
+    bg_fee = fee.calculate_fee(sample, point("BGTRGAZ", "Kireevo/Zaychar", "BG>RS"), fee.QUARTER, start, end, "50000")
+    assert money.format_amount(bg_fee.total, "EUR") == "12,110.87"
+    assert [money.format_amount(line.amount, "EUR") for line in bg_fee.invoice] == ["4,080.84", "3,949.20", "4,080.83"]
