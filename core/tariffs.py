@@ -2,8 +2,9 @@
 
 The export is wide: one row per point, direction, capacity type and validity
 window, with one price column per product period. Loading narrows it to the
-FGSZ Firm Entry/Exit rows the MVP uses and exposes them as `TariffRow`s that
-are looked up by (EIC, direction, date)."""
+Entry/Exit rows of the three supported TSOs (Firm, or Interruptible where a
+point has no Firm row) and exposes them as `TariffRow`s that are looked up by
+(TSO, EIC, direction, date)."""
 
 from __future__ import annotations
 
@@ -20,11 +21,17 @@ from . import periods
 from .money import to_fraction
 
 SHEET_NAME = "Capacity_fee"
-SCOPE_OPERATOR = "FGSZ"
-SCOPE_CAPACITY_TYPE = "Firm"
+FIRM = "Firm"
+INTERRUPTIBLE = "Interruptible"
 SCOPE_DIRECTIONS = ("Entry", "Exit")
-SUPPORTED_CURRENCY = "HUF"
-SUPPORTED_UNIT = "kWh/h"
+# Each TSO's rows must be in its own currency and capacity unit; nothing is converted.
+TSO_FORMATS: Mapping[str, tuple[str, str]] = {
+    "FGSZ": ("HUF", "kWh/h"),
+    "Gastran": ("EUR", "kWh/h"),
+    "BGTRGAZ": ("EUR", "kWh/d"),
+}
+# Rows left out on purpose, without a warning: Bulgartransgaz's earlier BGN tariffs.
+SKIPPED_CURRENCIES: Mapping[str, tuple[str, ...]] = {"BGTRGAZ": ("BGN",)}
 
 IDENTITY_COLUMNS = [
     "EIC", "Network point", "System operator", "Direction", "Currency",
@@ -38,13 +45,21 @@ DEFAULT_SAMPLE_PATH = Path(__file__).resolve().parent.parent / "data" / "sample"
 
 @dataclass(frozen=True)
 class TariffRow:
-    """One Firm tariff row: the prices valid for a point and direction."""
+    """One tariff row: the prices valid for a point (TSO, EIC, direction)."""
 
+    operator: str
     eic: str
     direction: str
     valid_from: date
     valid_to: date | None  # None = open-ended
-    prices: Mapping[str, Fraction] = field(compare=False)  # HUF per 1 kWh/h for the whole product period
+    prices: Mapping[str, Fraction] = field(compare=False)  # `currency` per 1 `unit` for the whole product period
+    currency: str = "HUF"
+    unit: str = "kWh/h"
+    capacity_type: str = FIRM
+
+    @property
+    def key(self) -> tuple[str, str, str]:
+        return self.operator, self.eic, self.direction
 
     @property
     def open_ended(self) -> bool:
@@ -71,28 +86,33 @@ class TariffRow:
 
 
 class TariffTable:
-    """Firm tariff rows grouped by (EIC, direction)."""
+    """Tariff rows grouped by point: (TSO, EIC, direction)."""
 
     def __init__(self, rows: list[TariffRow]):
-        self._rows: dict[tuple[str, str], list[TariffRow]] = {}
+        self._rows: dict[tuple[str, str, str], list[TariffRow]] = {}
         for row in sorted(rows, key=lambda r: r.valid_from):
-            self._rows.setdefault((row.eic, row.direction), []).append(row)
+            self._rows.setdefault(row.key, []).append(row)
 
     def __len__(self) -> int:
         return sum(len(rows) for rows in self._rows.values())
 
-    def find_row(self, eic: str, direction: str, day: date) -> TariffRow | None:
+    def find_row(self, operator: str, eic: str, direction: str, day: date) -> TariffRow | None:
         """The row valid on `day` (a later row supersedes an earlier one)."""
-        for row in reversed(self._rows.get((eic, direction), [])):
+        for row in reversed(self._rows.get((operator, eic, direction), [])):
             if row.applies_on(day):
                 return row
         return None
 
-    def earliest_valid_from(self, eic: str, direction: str) -> date | None:
-        rows = self._rows.get((eic, direction))
+    def earliest_valid_from(self, operator: str, eic: str, direction: str) -> date | None:
+        rows = self._rows.get((operator, eic, direction))
         return rows[0].valid_from if rows else None
 
-    def keys(self) -> list[tuple[str, str]]:
+    def capacity_type(self, operator: str, eic: str, direction: str) -> str | None:
+        """Firm or Interruptible (never mixed for one point); None when the point has no rows."""
+        rows = self._rows.get((operator, eic, direction))
+        return rows[0].capacity_type if rows else None
+
+    def keys(self) -> list[tuple[str, str, str]]:
         return list(self._rows)
 
 
@@ -136,13 +156,9 @@ def parse_frame(frame: pd.DataFrame) -> LoadResult:
     for column in ("System operator", "Capacity_type", "Direction", "Currency", "Measure unit", "EIC"):
         frame[column] = frame[column].astype("string").str.strip()
 
-    in_scope = frame[
-        (frame["System operator"] == SCOPE_OPERATOR)
-        & (frame["Capacity_type"] == SCOPE_CAPACITY_TYPE)
-        & (frame["Direction"].isin(SCOPE_DIRECTIONS))
-    ]
+    in_scope = _scope(frame)
     if in_scope.empty:
-        return LoadResult(None, [f"The tariff file has no {SCOPE_OPERATOR} {SCOPE_CAPACITY_TYPE} Entry/Exit rows."])
+        return LoadResult(None, ["The tariff file has no FGSZ, Gastrans or Bulgartransgaz Entry/Exit rows."])
 
     rows: list[TariffRow] = []
     warnings: list[str] = []
@@ -160,16 +176,38 @@ def parse_frame(frame: pd.DataFrame) -> LoadResult:
     return LoadResult(TariffTable(rows), [], warnings)
 
 
+def _scope(frame: pd.DataFrame) -> pd.DataFrame:
+    """Entry/Exit rows of the supported TSOs, without the silently skipped
+    currencies; per point (TSO, EIC, direction) its Firm rows, or its
+    Interruptible rows when it has no Firm row."""
+    operator = frame["System operator"]
+    skipped = pd.Series(False, index=frame.index)
+    for tso, currencies in SKIPPED_CURRENCIES.items():
+        skipped |= ((operator == tso) & frame["Currency"].isin(currencies)).fillna(False).astype(bool)
+    keep = (
+        operator.isin(list(TSO_FORMATS))
+        & frame["Direction"].isin(SCOPE_DIRECTIONS)
+        & frame["Capacity_type"].isin([FIRM, INTERRUPTIBLE])
+    ).fillna(False).astype(bool)
+    rows = frame[keep & ~skipped]
+    point = [rows[c].fillna("") for c in ("System operator", "EIC", "Direction")]
+    is_firm = (rows["Capacity_type"] == FIRM).astype(bool)
+    has_firm = is_firm.groupby(point).transform("any").astype(bool)
+    return rows[is_firm == has_firm]
+
+
 def _parse_record(record) -> tuple[TariffRow | None, list[str]]:
     problems: list[str] = []
 
     eic = record["EIC"]
     if pd.isna(eic) or not str(eic).strip():
         problems.append("EIC is blank")
-    if record["Currency"] != SUPPORTED_CURRENCY:
-        problems.append(f"currency is {record['Currency']!s}, only {SUPPORTED_CURRENCY} is supported")
-    if record["Measure unit"] != SUPPORTED_UNIT:
-        problems.append(f"unit is {record['Measure unit']!s}, only {SUPPORTED_UNIT} is supported")
+    operator = str(record["System operator"])
+    currency, unit = TSO_FORMATS[operator]
+    if record["Currency"] != currency:
+        problems.append(f"currency is {record['Currency']!s}, only {currency} is supported for {operator}")
+    if record["Measure unit"] != unit:
+        problems.append(f"unit is {record['Measure unit']!s}, only {unit} is supported for {operator}")
 
     valid_from = pd.to_datetime(record["Valid from"], errors="coerce")
     if pd.isna(valid_from):
@@ -197,4 +235,8 @@ def _parse_record(record) -> tuple[TariffRow | None, list[str]]:
 
     if problems:
         return None, problems
-    return TariffRow(str(eic).strip(), str(record["Direction"]), valid_from.date(), valid_to, prices), []
+    row = TariffRow(
+        operator, str(eic).strip(), str(record["Direction"]), valid_from.date(), valid_to, prices,
+        currency, unit, str(record["Capacity_type"]),
+    )
+    return row, []
