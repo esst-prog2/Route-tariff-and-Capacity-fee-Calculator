@@ -21,7 +21,7 @@ The MVP works with FGSZ (Hungary) Firm capacity at 12 cross-border points (7 ent
 ## 3. The size
 ### What the first useful version does:
 * Parse and load the standard tariff Excel/CSV file into a queryable structure.
-* Find the cheapest combination of quarterly/monthly/daily products that covers a specific time period, over-booking whole months or quarters outside the period when that is cheaper (yearly products are left to tab 2 in the MVP).
+* Find the cheapest combination of yearly/quarterly/monthly/daily products that covers a specific time period, over-booking whole months, quarters or gas years outside the period when that is cheaper.
 * Calculate the total payable fee based on a user-defined capacity volume and break it down into monthly costs.
 * Uses the data of one TSO, FGSZ, in the MVP (the other TSOs are deferred)
 
