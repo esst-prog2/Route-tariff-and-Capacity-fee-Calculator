@@ -60,6 +60,10 @@ class RouteOracle:
         first, _ = periods.quarter_period(year, quarter)
         return self._sum(first, lambda row: row.quarter_price(quarter))
 
+    def year_price(self, gas_year: int) -> Fraction:
+        first, _ = periods.gas_year_period(gas_year)
+        return self._sum(first, lambda row: row.year_price())
+
     def tariff_used(self, first: date, last: date) -> str:
         parts = []
         for label, point in (("entry", self._entry), ("exit", self._exit)):
