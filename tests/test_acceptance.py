@@ -2,6 +2,7 @@
 extra ones added for this change, run through the public `core` API."""
 
 from datetime import date
+from fractions import Fraction
 from itertools import product
 
 import pytest
@@ -132,3 +133,17 @@ def test_readme_demo_figures(sample):
     assert money.format_decimal(result.capacity_kwh_h, 2) == "2083.33"
     assert result.total == 1_565_115
     assert [line.amount for line in result.invoice] == [527_376, 510_363, 527_376]
+
+
+# Homework 5: a link to reality. The expected value is not computed by the program: the user read the
+# two `Year` cells (Firm rows valid from 2026-10-01) in data/sample/tariffs_sample.xlsx by hand in Excel:
+# Mosonmagyaróvár AT>HU entry 2447.18 + Kiskundorozsma HU>RS exit 2652.96 = 5100.14 HUF per kWh/h.
+YEARLY_PRODUCT_BY_HAND = Fraction("5100.14")
+
+
+def test_a_whole_gas_year_never_costs_more_than_the_yearly_product(sample):
+    route = calculate_route(sample, point("Mosonmagyaróvár", "Entry"), point("Kiskundorozsma", "Exit"),
+                            date(2026, 10, 1), date(2027, 9, 30))
+    assert route.plan.total <= YEARLY_PRODUCT_BY_HAND, (
+        f"cheapest plan {float(route.plan.total):.4f} > yearly product {float(YEARLY_PRODUCT_BY_HAND)}: "
+        f"{[s.product for s in route.plan.segments]}")
