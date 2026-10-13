@@ -4,7 +4,7 @@ its own prices (no test relies on the sample's price relationships)."""
 from datetime import date, timedelta
 from fractions import Fraction
 
-from core.optimizer import DAILY, MONTHLY, QUARTERLY, PriceUnavailable, optimize
+from core.optimizer import DAILY, MONTHLY, QUARTERLY, YEARLY, PriceUnavailable, optimize
 
 
 class FakeOracle:
@@ -188,3 +188,38 @@ def test_over_booking_is_never_dearer_than_exact_cover():
     plan = optimize(date(2026, 12, 5), date(2027, 1, 15), FakeOracle(day=4, month=100))
     assert plan.total <= plan.all_daily_total
     assert plan.total < 168
+
+
+# Limiting the longest product (the comparison with the next shorter products).
+class YearOracle(FakeOracle):
+    def year_price(self, gas_year):
+        return Fraction(1000)
+
+
+def products(plan):
+    return {s.product for s in plan.segments}
+
+
+def test_without_yearly_products_the_quarters_are_used():
+    oracle = YearOracle(day=4, month=100, quarter={(y, q): 250 for y in (2026, 2027) for q in (1, 2, 3, 4)})
+    start, end = date(2026, 10, 1), date(2027, 9, 30)
+    assert products(optimize(start, end, oracle)) == {YEARLY}
+    limited = optimize(start, end, oracle, longest=QUARTERLY)
+    assert products(limited) == {QUARTERLY} and limited.total == 4 * 250
+
+
+def test_without_quarterly_products_the_months_are_used_and_may_over_book():
+    oracle = FakeOracle(day=4, month=100, quarter={(2026, 4): 250})
+    plan = optimize(date(2026, 10, 2), date(2026, 12, 30), oracle, longest=MONTHLY)
+    assert shape(plan) == [
+        (date(2026, 10, 1), date(2026, 10, 31), MONTHLY),
+        (date(2026, 11, 1), date(2026, 11, 30), MONTHLY),
+        (date(2026, 12, 1), date(2026, 12, 31), MONTHLY),
+    ]
+    assert plan.total == 300 and plan.days_outside == 2
+
+
+def test_daily_only_prices_every_requested_day():
+    oracle = FakeOracle(day=4, month=100, quarter={(2026, 4): 250})
+    plan = optimize(date(2026, 10, 1), date(2026, 12, 31), oracle, longest=DAILY)
+    assert products(plan) == {DAILY} and plan.total == 92 * 4 == plan.all_daily_total
