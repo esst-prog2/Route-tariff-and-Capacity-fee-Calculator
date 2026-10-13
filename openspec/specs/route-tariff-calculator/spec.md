@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Lets a trader pick an FGSZ entry point, an FGSZ exit point and a booking period, and see the cheapest combination of quarterly, monthly and daily capacity products for that route, with the cost expressed per kWh/h, per MWh and (given an FX rate) in EUR/MWh.
+Lets a trader pick a route beginning and ending country on the HU - RS - BG corridor and a booking period, and see the cheapest combination of yearly, quarterly, monthly and daily capacity products for each TSO on the hub-to-hub route, with each point's cost and the route total in EUR/MWh (given an FX rate where the route touches HU).
 
 ## Requirements
 
@@ -14,7 +14,7 @@ The Route Tariff Calculator tab SHALL take a route beginning country and a route
 - **THEN** it shows a "Route beginning" dropdown and a "Route ending" dropdown, each offering HU, RS and BG, a start date and an end date, and no TSO, entry or exit dropdown
 
 ### Requirement: Route price
-For every TSO on the route and every product, the TSO's price SHALL be the sum of that product's prices at the TSO's points on the route, each taken from the tariff row valid on the product's first day. A TSO's price SHALL be in that TSO's currency per 1 unit of its capacity unit for the whole product period (FGSZ HUF per kWh/h, Gastrans EUR per kWh/h, Bulgartransgaz EUR per kWh/d). Prices of different TSOs SHALL NOT be added together before they are converted to EUR/MWh.
+For every TSO on the route and every product, the TSO's price SHALL be the sum of that product's prices at the TSO's points on the route, each priced part by part where the product's period crosses a tariff change (see tariff-loading "Price-cell meaning"). A TSO's price SHALL be in that TSO's currency per 1 unit of its capacity unit for the whole product period (FGSZ HUF per kWh/h, Gastrans EUR per kWh/h, Bulgartransgaz EUR per kWh/d). Prices of different TSOs SHALL NOT be added together before they are converted to EUR/MWh.
 
 #### Scenario: Summing entry and exit
 - **WHEN** the route is BG to HU, and for December 2026 the Gastrans monthly price is 1.36 EUR per kWh/h at the entry Kireevo/Zaychar (BG>RS) and 2.34 at the exit Kiskundorozsma 2 (RS>HU)
@@ -31,7 +31,7 @@ The system SHALL, for each TSO on the route separately, find the cheapest way to
 3. Every gas year (1 October - 30 September) the period touches is priced at the lower of its yearly price and the sum of the prices its touched quarters have under rule 2.
 4. Monthly, quarterly and yearly products are always whole calendar months, quarters and gas years; there are no rolling windows.
 5. When two choices cost the same, the coarser product is chosen (gas year over quarters, quarter over months, month over days).
-Each product is priced from the tariff row valid on its first day. A yearly, monthly or quarterly product whose first day lies before the booking period and has no applicable tariff row is not an option; the other products are used instead, without a message.
+Each product is priced part by part where its period crosses a tariff change (see tariff-loading "Price-cell meaning"), the same way as on the Capacity Fee Calculator. A yearly, monthly or quarterly product that has no applicable tariff row on some day of its period lying before the booking period is not an option; the other products are used instead, without a message.
 
 #### Scenario: Partial edge months are daily
 - **WHEN** the period is 2026-12-05 to 2027-01-15 and, for a TSO, in each of the two months the daily prices of the requested days add up to less than the monthly price
@@ -69,6 +69,10 @@ Each product is priced from the tariff row valid on its first day. A yearly, mon
 - **WHEN** the period is 2026-09-20 to 2026-10-10 and, for a TSO, daily products are cheaper than the September and October monthly products and the Q3 and Q4 quarterly products
 - **THEN** 20 to 30 September are priced daily from the tariff row valid on those dates, 1 to 10 October are priced daily from the row valid from 2026-10-01, and the two parts appear as separate segments
 
+#### Scenario: Yearly product across a 1 January tariff change
+- **WHEN** a TSO's rows change on 2027-01-01, its `Year` cell is 3.97 before and 4.10 from that date, and the period is gas year 2026/27
+- **THEN** the yearly product is compared with the other products at 3.97 x 92/365 + 4.10 x 273/365, not at 3.97
+
 #### Scenario: FX rate does not change the choice
 - **WHEN** the same route and period are calculated with the FX rate 380 and with 420
 - **THEN** every TSO chooses the same products both times
@@ -78,7 +82,7 @@ For a valid request the tab SHALL show:
 1. One table of every network point on the route in route order, with the TSO, the cleaned name with flow, the EIC, the direction, the capacity type (Firm or Interruptible), the products the point books (see Product labels) and the point's EUR/MWh (see Cost per MWh).
 2. A note when any product of any TSO covers days outside the booking period, saying which TSO over-books how many days and why.
 3. A route total in EUR/MWh with the cheapest combination and, where there is one, the comparison with the next shorter products and the saving (see Next shorter product comparison).
-4. A collapsible "Details" section, closed by default, with one row per point and booked product giving the product's dates (for a yearly, monthly or quarterly product, its whole gas year, calendar month or quarter, even when part of it lies outside the booking period), the product type (yearly, quarterly, monthly or daily), the tariff used: the `Valid from` of the row that point's product was priced from, marked as open-ended when its `Valid to` is blank, and, as the last column, the tariff: the point's price for that product exactly as in the tariff file, in the point's own currency and unit (e.g. "0.1211087 EUR per kWh/d"); for daily products the price of one day, followed by "per day" (several values when the rows change within the days).
+4. A collapsible "Details" section, closed by default, with one row per point and booked product giving the product's dates (for a yearly, monthly or quarterly product, its whole gas year, calendar month or quarter, even when part of it lies outside the booking period), the product type (yearly, quarterly, monthly or daily), the tariff used: the `Valid from` of every row that point's product was priced from, each marked as open-ended when its `Valid to` is blank, and, as the last column, the tariff: the point's price cell for that product exactly as in the tariff file, in the point's own currency and unit (e.g. "0.1211087 EUR per kWh/d"), one value per row when the product's period crosses a tariff change; for daily products the price of one day, followed by "per day" (several values when the rows change within the days).
 The tab SHALL NOT show separate product tables per TSO, a summary per TSO, or any figure in a TSO's own currency and unit. When any point on the route uses Interruptible capacity, the tab SHALL say that Interruptible capacity can be interrupted by the TSO. Alternatives that the optimizer rejected SHALL NOT be shown.
 
 #### Scenario: Point list for BG to HU
@@ -113,8 +117,12 @@ The tab SHALL NOT show separate product tables per TSO, a summary per TSO, or an
 - **WHEN** the real tariffs are loaded, the route is BG to HU, the period is 2026-10-01 to 2027-03-31, and Bulgartransgaz books Q4 2026 at the exit Kireevo/Zaychar (BG>RS)
 - **THEN** that Details row's tariff reads "0.1211087 EUR per kWh/d", and the Gastrans entry Kireevo/Zaychar (BG>RS) row for Q4 2026 reads "1.88 EUR per kWh/h"
 
+#### Scenario: Product priced from two rows
+- **WHEN** a point's booked gas year is priced from the row valid from 2026-01-01 to 2026-12-31 and the row valid from 2027-01-01
+- **THEN** its Details row's tariff used names both rows and its tariff gives both `Year` cells, in that order
+
 ### Requirement: Cost per MWh
-Each point's cost SHALL be the sum, over the products its TSO books, of that point's own price for the product (the row valid on the product's first day; for daily days, the sum of the point's daily prices), so that a TSO's cost is the sum of its points' costs. A point's per-MWh figure SHALL be its cost divided by the energy one unit of its capacity carries on the requested days, times 1000, which assumes the booked capacity is used fully: for a point priced per kWh/h, cost / (24 x requested days) x 1000; for a point priced per kWh/d, cost / requested days x 1000. The figure is in the point's currency; an FGSZ point's HUF/MWh is converted to EUR/MWh by dividing by the FX rate, and the EUR points' figures are already EUR/MWh. The route's EUR/MWh SHALL be the sum of its points' EUR/MWh figures, which equals the sum of its TSOs' figures. Over-booked days outside the period add to the cost but not to the energy.
+Each point's cost SHALL be the sum, over the products its TSO books, of that point's own price for the product (priced part by part where the product's period crosses a tariff change; for daily days, the sum of the point's daily prices), so that a TSO's cost is the sum of its points' costs. A point's per-MWh figure SHALL be its cost divided by the energy one unit of its capacity carries on the requested days, times 1000, which assumes the booked capacity is used fully: for a point priced per kWh/h, cost / (24 x requested days) x 1000; for a point priced per kWh/d, cost / requested days x 1000. The figure is in the point's currency; an FGSZ point's HUF/MWh is converted to EUR/MWh by dividing by the FX rate, and the EUR points' figures are already EUR/MWh. The route's EUR/MWh SHALL be the sum of its points' EUR/MWh figures, which equals the sum of its TSOs' figures. Over-booked days outside the period add to the cost but not to the energy.
 
 #### Scenario: Forty-two day period
 - **WHEN** the period is 42 days and an FGSZ point's cost is 2145.47 HUF per kWh/h
