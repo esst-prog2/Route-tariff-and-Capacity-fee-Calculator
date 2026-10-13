@@ -4,7 +4,8 @@ import pytest
 
 from core import points
 from core.points import BULGARTRANSGAZ, FGSZ, GASTRANS
-from core.tariffs import load_tariffs, resolve_tariff_path
+from core import tariffs
+from core.tariffs import load_tariffs
 
 from .helpers import make_row, make_table
 
@@ -15,7 +16,16 @@ EXCLUDED_EICS = {
     "39WKEMEHKER1NNNV",   # Méhkerék "0" pont
     "TSO_EXIT_SUM_HU",    # n.a domestic exit sum
     "21W000000000031C",   # UGS Chiren (Bulgartransgaz storage)
+    "21Y000000000102O",   # Eustream Domestic
+    "21Z0000000000600",   # Baumgarten (GCA), not WAG
+    "21Z000000000164P",   # Baumgarten (TAG)
 }
+
+
+@pytest.fixture(scope="module")
+def real():
+    """The catalog of the real tariff file."""
+    return points.build_catalog(load_tariffs(tariffs.DEFAULT_PATH).table)
 
 
 def find(tso, name, flow):
@@ -26,37 +36,153 @@ def describe(route):
     return [(p.tso, p.direction, p.cleaned_name) for p in route]
 
 
-# --- supported points ----------------------------------------------------------------------
-
-def test_point_counts_per_tso():
-    assert [len(points.points_of(tso)) for tso in points.TSOS] == [13, 4, 13]
-    assert len(points.POINTS) == 30
+def single(catalog, tso, name, flow):
+    return next(p for p in catalog.singles if (p.tso, p.name, p.flow) == (tso, name, flow))
 
 
-def test_excluded_points_are_absent():
-    assert not EXCLUDED_EICS & {p.eic for p in points.POINTS}
-    assert ("Mosonmagyaróvár", "HU>AT") not in {(p.name, p.flow) for p in points.POINTS}
+def bundle(catalog, label):
+    return next(b for b in catalog.bundles if b.label() == label)
 
 
-def test_tab2_labels_are_unique_per_tso_and_include_the_flow():
-    for tso in points.TSOS:
-        labels = [p.fee_label() for p in points.points_of(tso)]
+# --- catalog ---------------------------------------------------------------------------------
+
+def test_point_counts_per_tso(real):
+    assert (len(real.singles), len(real.lng), len(real.bundles)) == (109, 14, 43)
+    counts = {tso: len(real.singles_of(tso)) for tso in real.tsos()}
+    assert (counts[FGSZ], counts[BULGARTRANSGAZ], counts[GASTRANS]) == (14, 13, 4)
+
+
+def test_excluded_points_are_absent(real):
+    every = [*real.singles, *real.lng]
+    assert not EXCLUDED_EICS & {p.eic for p in every}
+    assert not any(p.tso == "TAG" and p.name == "Baumgarten" for p in every)
+
+
+def test_interruptible_only_side_is_still_a_single_side(real):
+    point = single(real, FGSZ, "Mosonmagyaróvár", "HU>AT")
+    assert real.capacity_type(point) == "Interruptible"
+    assert point.fee_label(real.capacity_type(point)) == "Mosonmagyaróvár HU>AT (21Z000000000003C) - Interruptible"
+
+
+def test_lng_entries(real):
+    assert [p.lng_label() for p in real.lng] == [
+        "Agia Triada (DESFA)", "Amfitriti (DESFA)", "Brunsbüttel Hafen (Gasunie Deutschland)",
+        "Cavarzere (Snam Rete Gas)", "Eems Energy Terminal (Gasunie Transport Services)",
+        "Gate Terminal (Gasunie Transport Services)", "Klaipeda (Amber Grid)", "Omišalj (Plinacro)",
+        "Panigaglia (Snam Rete Gas)", "Piombino (Snam Rete Gas)", "Ravenna (Snam Rete Gas)",
+        "Stade Hafen (Gasunie Deutschland)", "Wilhelmshaven (Open Grid Europe)", "Świnoujście (GAZ-SYSTEM)",
+    ]
+
+
+def test_every_cleaned_name_and_flow_on_the_real_file(real):
+    """Any change to the cleaning rule shows up here."""
+    names = sorted({(p.name, p.flow) for p in real.singles})
+    assert names == [
+        ("Balassagyarmat", "HU>SK"), ("Balassagyarmat", "SK>HU"), ("Baumgarten", "AT>SK"), ("Baumgarten", "SK>AT"),
+        ("Beregdaróc", "UA>HU"), ("Cieszyn", "CZ>PL"), ("Cieszyn", "PL>CZ"), ("Csanádpalota", "HU>RO"),
+        ("Csanádpalota", "RO>HU"), ("Drávaszerdahely", "CR>HU"), ("Drávaszerdahely", "HU>CR"),
+        ("GCP GAZ-SYSTEM/UA TSO", "PL>UA"), ("GCP GAZ-SYSTEM/UA TSO", "UA>PL"), ("Gorizia/Šempeter", "IT>SI"),
+        ("Gorizia/Šempeter", "SI>IT"), ("Kipi", "TR>GR"), ("Kipoi", "TR>TAP"), ("Kireevo/Zaychar", "BG>RS"),
+        ("Kireevo/Zaychar", "RS>BG"), ("Kiskundorozsma", "HU>RS"), ("Kiskundorozsma 2", "HU>RS"),
+        ("Kiskundorozsma 2", "RS>HU"), ("Komotini", "DESFA>IGB"), ("Komotini", "TAP>ICGB"),
+        ("Kulata/Sidirokastron", "BG>GR"), ("Kulata/Sidirokastron", "GR>BG"), ("Kyustendil/Zidilovo", "BG>MK"),
+        ("Lanžhot", "CZ>SK"), ("Lanžhot", "SK>CZ"), ("Mazara del Vallo", "LY>IT"), ("Melendugno", "TAP>IT"),
+        ("Mosonmagyaróvár", "AT>HU"), ("Mosonmagyaróvár", "HU>AT"), ("Murfeld/Ceršak", "AT>SI"),
+        ("Murfeld/Ceršak", "SI>AT"), ("Nea Mesimvria", "GR>TAP"), ("Nea Mesimvria", "TAP>GR"),
+        ("Negru Voda 1/Kardam", "BG>RO"), ("Negru Voda 1/Kardam", "RO>BG"), ("Rogatec", "CR>SI"),
+        ("Rogatec", "SI>CR"), ("Ruse/Giurgiu", "BG>RO"), ("Ruse/Giurgiu", "RO>BG"), ("Santaka", "LT>PL"),
+        ("Stara Zagora", "ICGB>BG"), ("Strandzha 1/Malkoclar", "BG>TR"), ("Strandzha 1/Malkoclar", "TR>BG"),
+        ("Strandzha 2/Malkoclar", "TR>BG"), ("Tarvisio/Arnoldstein", "AT>IT"), ("Tarvisio/Arnoldstein", "IT>AT"),
+        ("Uzhgorod/Velké Kapušany", "SK>UA"), ("Uzhgorod/Velké Kapušany", "UA>SK"), ("VIP Bereg", "HU>UA"),
+        ("VIP Bereg", "UA>HU"), ("VIP Brandov-GASPOOL", "CZ>DE"), ("VIP Brandov-GASPOOL", "DE>CZ"),
+        ("VIP Oberkappel", "AT>DE"), ("VIP Oberkappel", "DE>AT"), ("VIP TTF-THE-H", "DE>NL"),
+        ("VIP TTF-THE-H", "NL>DE"), ("Vyrava", "PL>SK"), ("Vyrava", "SK>PL"),
+    ]
+
+
+def test_known_points_keep_their_names_in_the_catalog(real):
+    assert set(points.POINTS) <= set(real.singles)
+
+
+@pytest.mark.parametrize("source,expected", [
+    ("Csanádpalota - RO (RO>HU)", ("Csanádpalota", "RO>HU")),
+    ("Baumgarten - AT (AT>SK, WAG)", ("Baumgarten", "AT>SK")),
+    ("Murfeld/Cersak - AT (SI>AT) virtuális", ("Murfeld/Cersak", "SI>AT")),
+    ("Uzhgorod/Velké Kapušany SK (SK>UA)", ("Uzhgorod/Velké Kapušany", "SK>UA")),
+    ("Stara Zagora ICGB (ICGB>BG)", ("Stara Zagora", "ICGB>BG")),
+    ("Nea Mesimvria – GR (TAP>GR)", ("Nea Mesimvria", "TAP>GR")),
+    ("Kipoi TR>TAP", ("Kipoi", "TR>TAP")),
+    ("Wilhelmshaven, LNG-Zone - DE (LNG>DE)", ("Wilhelmshaven", "LNG>DE")),
+    ("Brunsbüttel Hafen (FSRU) - DE (LNG>DE)", ("Brunsbüttel Hafen", "LNG>DE")),
+    ("Mazara del Vallo", None),
+])
+def test_clean_name(source, expected):
+    assert points.clean_name(source) == expected
+
+
+# --- bundles ---------------------------------------------------------------------------------
+
+def test_bundle_sides(real):
+    moson = bundle(real, "Mosonmagyaróvár AT>HU (Gas Connect Austria + FGSZ)")
+    assert [(p.tso, p.direction, p.eic) for p in moson.sides] == [
+        ("GCA", "Exit", "21Z000000000003C"), (FGSZ, "Entry", "21Z000000000003C"),
+    ]
+    assert moson.exit.name == moson.entry.name == "Mosonmagyaróvár"
+
+
+def test_interruptible_crossings_are_not_bundled(real):
+    pairs = {(b.name, b.flow) for b in real.bundles}
+    for crossing in [("Mosonmagyaróvár", "HU>AT"), ("Kiskundorozsma 2", "HU>RS"), ("Murfeld/Ceršak", "SI>AT"),
+                     ("Kireevo/Zaychar", "RS>BG")]:
+        assert crossing not in pairs
+
+
+def test_baumgarten_bundles_use_wag(real):
+    baumgarten = [b for b in real.bundles if b.name == "Baumgarten"]
+    assert [b.label() for b in baumgarten] == [
+        "Baumgarten AT>SK (Gas Connect Austria + Eustream)", "Baumgarten SK>AT (Eustream + Gas Connect Austria)",
+    ]
+    assert {p.eic for b in baumgarten for p in b.sides} == {"21Y---A001A023-Y", "21Z000000000163R"}
+
+
+def test_bundles_need_both_sides_firm():
+    eic = "21Z000000000003C"
+    table = make_table(
+        make_row(eic=eic, direction="Exit", operator="GCA", currency="EUR", name="Mosonmagyaróvár - AT (AT>HU)"),
+        make_row(eic=eic, direction="Entry", name="Mosonmagyaróvár - HU (AT>HU)"),
+        make_row(eic=eic, direction="Exit", name="Mosonmagyaróvár - HU (HU>AT)", capacity="Interruptible"),
+        make_row(eic=eic, direction="Entry", operator="GCA", currency="EUR", name="Mosonmagyaróvár - AT (HU>AT)"),
+    )
+    catalog = points.build_catalog(table)
+    assert [b.label() for b in catalog.bundles] == ["Mosonmagyaróvár AT>HU (Gas Connect Austria + FGSZ)"]
+    assert len(catalog.singles) == 4
+
+
+# --- labels and TSOs -------------------------------------------------------------------------
+
+def test_tab2_labels_are_unique_per_tso_and_include_the_flow(real):
+    for tso in real.tsos():
+        labels = [p.fee_label() for p in real.singles_of(tso)]
         assert len(set(labels)) == len(labels)
-    labels = [p.fee_label() for p in points.points_of(FGSZ)]
+    labels = [p.fee_label() for p in real.singles_of(FGSZ)]
     assert "Csanádpalota RO>HU (21Z000000000236Q)" in labels
     assert "Csanádpalota HU>RO (21Z000000000236Q)" in labels
 
 
-def test_interruptible_label():
+def test_interruptible_label(real):
+    labels = [p.fee_label(real.capacity_type(p)) for p in real.singles_of(GASTRANS)]
+    assert [label.endswith(" - Interruptible") for label in labels] == [False, True, True, False]
     point = find(FGSZ, "Kiskundorozsma 2", "HU>RS")
     assert point.fee_label("Interruptible") == "Kiskundorozsma 2 HU>RS (21Z000000000505P) - Interruptible"
     assert point.fee_label("Firm") == "Kiskundorozsma 2 HU>RS (21Z000000000505P)"
 
 
-def test_cleaned_names_and_tso_names():
-    assert "Beregdaróc (UA>HU)" in {p.cleaned_name for p in points.POINTS}  # no "1400"
-    assert not any("1400" in p.name for p in points.POINTS)
-    assert [points.tso_name(t) for t in points.TSOS] == ["FGSZ", "Gastrans", "Bulgartransgaz"]
+def test_cleaned_names_and_tso_names(real):
+    assert "Beregdaróc (UA>HU)" in {p.cleaned_name for p in real.singles}  # no "1400"
+    assert not any("1400" in p.name for p in real.singles)
+    assert len(real.tsos()) == 21
+    assert {"Eustream", "Gas Connect Austria", "Open Grid Europe", "Snam Rete Gas"} <= {
+        points.tso_name(t) for t in real.tsos()}
 
 
 # --- point identity ------------------------------------------------------------------------
@@ -124,7 +250,7 @@ INTERRUPTIBLE = {
 
 
 def test_every_point_has_rows_of_the_expected_capacity_type_in_the_sample():
-    table = load_tariffs(resolve_tariff_path({})).table
+    table = load_tariffs(tariffs.DEFAULT_SAMPLE_PATH).table
     for point in points.POINTS:
         expected = "Interruptible" if (point.tso, point.name, point.flow) in INTERRUPTIBLE else "Firm"
         assert table.capacity_type(*point.key) == expected, point

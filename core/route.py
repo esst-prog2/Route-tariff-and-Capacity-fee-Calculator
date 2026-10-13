@@ -17,7 +17,7 @@ from . import periods, points
 from .money import parse_number
 from .optimizer import DAILY, MONTHLY, PRODUCTS, QUARTERLY, YEARLY, Plan, PriceUnavailable, Segment, optimize
 from .points import Point
-from .tariffs import TSO_FORMATS, TariffRow, TariffTable
+from .tariffs import TSO_FORMATS, NoTariffRow, TariffRow, TariffTable
 
 FX_MESSAGE = "The FX rate must be a positive number (HUF per 1 EUR)."
 HOURS_PER_UNIT = {"kWh/h": 24, "kWh/d": 1}  # energy one unit of capacity carries per day, in kWh
@@ -40,7 +40,8 @@ class TsoOracle:
     """One TSO's prices on a route: the sum of the same product's prices at
     each of the TSO's points, in the TSO's currency per 1 unit of its capacity.
 
-    Each product is priced from the row valid on its first day."""
+    A product whose period crosses a tariff change is priced part by part
+    (see `TariffTable.product_price`)."""
 
     def __init__(self, table: TariffTable, tso_points: list[Point]):
         self._table = table
@@ -58,16 +59,28 @@ class TsoOracle:
     def day_price(self, day: date) -> Fraction:
         return self._sum(day, lambda row: row.day_price(day.month))
 
+    def _product(self, first: date, last: date, cell) -> Fraction:
+        """A yearly, quarterly or monthly product's price over first..last,
+        each point's cell weighted by the days of each row it crosses."""
+        total = Fraction(0)
+        for point in self._points:
+            try:
+                total += self._table.product_price(*point.key, first, last, cell)[0]
+            except NoTariffRow as missing:
+                raise NoTariffError(point, missing.day) from None
+        return total
+
     def month_price(self, year: int, month: int) -> Fraction:
-        return self._sum(periods.month_first(year, month), lambda row: row.month_price(month))
+        first, last = periods.month_first(year, month), periods.month_last(year, month)
+        return self._product(first, last, lambda row: row.month_price(month))
 
     def quarter_price(self, year: int, quarter: int) -> Fraction:
-        first, _ = periods.quarter_period(year, quarter)
-        return self._sum(first, lambda row: row.quarter_price(quarter))
+        first, last = periods.quarter_period(year, quarter)
+        return self._product(first, last, lambda row: row.quarter_price(quarter))
 
     def year_price(self, gas_year: int) -> Fraction:
-        first, _ = periods.gas_year_period(gas_year)
-        return self._sum(first, lambda row: row.year_price())
+        first, last = periods.gas_year_period(gas_year)
+        return self._product(first, last, lambda row: row.year_price())
 
     def sources(self, point: Point, first: date, last: date) -> str:
         """The rows one point's prices come from on days first..last."""
@@ -95,27 +108,34 @@ def segment_price(oracle: TsoOracle, segment: Segment) -> Fraction:
     return sum((oracle.day_price(d) for d in periods.iter_days(segment.start, segment.end)), Fraction(0))
 
 
+def _segment_cell(segment: Segment):
+    """The price cell a yearly, quarterly or monthly segment books."""
+    month = segment.start.month
+    if segment.product == YEARLY:
+        return lambda row: row.year_price()
+    if segment.product == QUARTERLY:
+        return lambda row: row.quarter_price(periods.quarter_of_month(month))
+    return lambda row: row.month_price(month)
+
+
 def point_tariff_used(table: TariffTable, point: Point, segment: Segment) -> str:
-    """The tariff rows behind one point's price for a booked product: the row
-    valid on the first day of a yearly, quarterly or monthly product, or the
-    rows of each daily day."""
-    last = segment.end if segment.product == DAILY else segment.start
-    return TsoOracle(table, [point]).sources(point, segment.start, last)
+    """The tariff rows behind one point's price for a booked product: every
+    row valid during the product (or during the daily days)."""
+    return TsoOracle(table, [point]).sources(point, segment.start, segment.end)
 
 
 def point_tariff(table: TariffTable, point: Point, segment: Segment) -> tuple[Fraction, ...]:
     """One point's tariff for a booked product, in its own currency and unit:
-    the single cell of a yearly, quarterly or monthly product, or the distinct
-    day prices of a daily stretch (one value unless the rows change)."""
-    oracle = TsoOracle(table, [point])
+    the product's cell of each row it is priced from (one value unless the
+    product crosses a tariff change), or the distinct day prices of a daily
+    stretch."""
     if segment.product != DAILY:
-        return (segment_price(oracle, segment),)
-    prices: list[Fraction] = []
-    for day in periods.iter_days(segment.start, segment.end):
-        price = oracle.day_price(day)
-        if price not in prices:
-            prices.append(price)
-    return tuple(prices)
+        cell = _segment_cell(segment)
+        prices = [cell(part.row) for part in table.product_parts(*point.key, segment.start, segment.end)]
+    else:
+        oracle = TsoOracle(table, [point])
+        prices = [oracle.day_price(day) for day in periods.iter_days(segment.start, segment.end)]
+    return tuple(dict.fromkeys(prices))
 
 
 @dataclass(frozen=True)
