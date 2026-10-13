@@ -36,12 +36,13 @@ For any product and period, the route price SHALL be the entry price plus the ex
 - **THEN** the route monthly price for December is 700
 
 ### Requirement: Optimization
-The system SHALL find the cheapest way to cover every day of the booking period from calendar-aligned quarterly, monthly and daily products, using route prices and one shared product choice for entry and exit. A monthly or quarterly product MAY cover days outside the booking period (over-booking) when that is cheaper than covering only the requested days. The system SHALL work in HUF and never depend on the FX rate. The rules are:
+The system SHALL find the cheapest way to cover every day of the booking period from calendar-aligned yearly (gas year), quarterly, monthly and daily products, using route prices and one shared product choice for entry and exit. A yearly, monthly or quarterly product MAY cover days outside the booking period (over-booking) when that is cheaper than covering only the requested days. The system SHALL work in HUF and never depend on the FX rate. The rules are:
 1. Every calendar month the period touches is priced at the lower of its monthly route price and the sum of the daily route prices of the requested days in that month.
 2. Every calendar quarter (Oct-Dec, Jan-Mar, Apr-Jun, Jul-Sep) the period touches is priced at the lower of its quarterly route price and the sum of the prices its touched months have under rule 1.
-3. Monthly and quarterly products are always whole calendar months and quarters; there are no rolling windows and no yearly products.
-4. When two choices cost the same, the coarser product is chosen (quarter over months, month over days).
-Each product is priced from the tariff row valid on its first day. A monthly or quarterly product whose first day lies before the booking period and has no applicable tariff row is not an option; the other products are used instead, without a message.
+3. Every gas year (1 October - 30 September) the period touches is priced at the lower of its yearly route price and the sum of the prices its touched quarters have under rule 2.
+4. Monthly, quarterly and yearly products are always whole calendar months, quarters and gas years; there are no rolling windows.
+5. When two choices cost the same, the coarser product is chosen (gas year over quarters, quarter over months, month over days).
+Each product is priced from the tariff row valid on its first day. A yearly, monthly or quarterly product whose first day lies before the booking period and has no applicable tariff row is not an option; the other products are used instead, without a message.
 
 #### Scenario: Partial edge months are daily
 - **WHEN** the period is 2026-12-05 to 2027-01-15 and, in each of the two months, the daily route prices of the requested days add up to less than the monthly route price

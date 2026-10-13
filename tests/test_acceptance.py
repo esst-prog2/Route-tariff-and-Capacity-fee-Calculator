@@ -2,13 +2,14 @@
 extra ones added since, run through the public `core` API on corridor routes."""
 
 from datetime import date
+from fractions import Fraction
 from itertools import product
 
 import pytest
 
 from core import fee, money, points
-from core.optimizer import MONTHLY, QUARTERLY
-from core.route import RouteError, RouteResult, calculate_route
+from core.optimizer import MONTHLY, QUARTERLY, optimize
+from core.route import RouteError, RouteResult, TsoOracle, calculate_route
 from core.tariffs import load_tariffs, resolve_tariff_path
 
 from .helpers import make_row, make_table
@@ -146,3 +147,18 @@ def test_readme_demo_figures(sample):
     bg_fee = fee.calculate_fee(sample, point("BGTRGAZ", "Kireevo/Zaychar", "BG>RS"), fee.QUARTER, start, end, "50000")
     assert money.format_amount(bg_fee.total, "EUR") == "12,110.87"
     assert [money.format_amount(line.amount, "EUR") for line in bg_fee.invoice] == ["4,080.84", "3,949.20", "4,080.83"]
+
+
+# Homework 5: a link to reality. The expected value is not computed by the program: the user read the
+# two `Year` cells (Firm rows valid from 2026-10-01) in data/sample/tariffs_sample.xlsx by hand in Excel:
+# Mosonmagyaróvár AT>HU entry 2447.18 + Kiskundorozsma HU>RS exit 2652.96 = 5100.14 HUF per kWh/h.
+YEARLY_PRODUCT_BY_HAND = Fraction("5100.14")
+
+
+def test_a_whole_gas_year_never_costs_more_than_the_yearly_product(sample):
+    # The FGSZ entry-to-exit route is no longer a tab 1 route, so the same two points go to the optimiser directly.
+    oracle = TsoOracle(sample, [point("FGSZ", "Mosonmagyaróvár", "AT>HU"), point("FGSZ", "Kiskundorozsma", "HU>RS")])
+    plan = optimize(date(2026, 10, 1), date(2027, 9, 30), oracle)
+    assert plan.total <= YEARLY_PRODUCT_BY_HAND, (
+        f"cheapest plan {float(plan.total):.4f} > yearly product {float(YEARLY_PRODUCT_BY_HAND)}: "
+        f"{[s.product for s in plan.segments]}")

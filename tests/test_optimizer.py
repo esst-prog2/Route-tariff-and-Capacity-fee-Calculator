@@ -20,6 +20,9 @@ class FakeOracle:
     def quarter_price(self, year, quarter):
         return Fraction(self._quarter.get((year, quarter), 10**9))
 
+    def year_price(self, gas_year):
+        return Fraction(10**9)
+
     def tariff_used(self, first, last):
         return f"{first}..{last}"
 
