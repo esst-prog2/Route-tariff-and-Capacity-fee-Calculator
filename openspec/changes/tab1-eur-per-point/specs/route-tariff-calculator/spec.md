@@ -5,7 +5,7 @@ For a valid request the tab SHALL show:
 1. One table of every network point on the route in route order, with the TSO, the cleaned name with flow, the EIC, the direction, the capacity type (Firm or Interruptible), the products the point books (see Product labels) and the point's EUR/MWh (see Cost per MWh).
 2. A note when any product of any TSO covers days outside the booking period, saying which TSO over-books how many days and why.
 3. A route total in EUR/MWh with the cheapest combination and, where there is one, the comparison with the next shorter products and the saving (see Next shorter product comparison).
-4. A collapsible "Details" section, closed by default, with one row per point and booked product giving the product's dates (for a yearly, monthly or quarterly product, its whole gas year, calendar month or quarter, even when part of it lies outside the booking period), the product type (yearly, quarterly, monthly or daily) and the tariff used: the `Valid from` of the row that point's product was priced from, marked as open-ended when its `Valid to` is blank.
+4. A collapsible "Details" section, closed by default, with one row per point and booked product giving the product's dates (for a yearly, monthly or quarterly product, its whole gas year, calendar month or quarter, even when part of it lies outside the booking period), the product type (yearly, quarterly, monthly or daily), the tariff used: the `Valid from` of the row that point's product was priced from, marked as open-ended when its `Valid to` is blank, and, as the last column, the tariff: the point's price for that product exactly as in the tariff file, in the point's own currency and unit (e.g. "0.1211087 EUR per kWh/d"); for daily products the price of one day, followed by "per day" (several values when the rows change within the days).
 The tab SHALL NOT show separate product tables per TSO, a summary per TSO, or any figure in a TSO's own currency and unit. When any point on the route uses Interruptible capacity, the tab SHALL say that Interruptible capacity can be interrupted by the TSO. Alternatives that the optimizer rejected SHALL NOT be shown.
 
 #### Scenario: Point list for BG to HU
@@ -34,7 +34,11 @@ The tab SHALL NOT show separate product tables per TSO, a summary per TSO, or an
 
 #### Scenario: Details section
 - **WHEN** a valid route and period produce a result
-- **THEN** a "Details" section, closed until opened, lists for every point each booked product with its dates, product type and tariff used
+- **THEN** a "Details" section, closed until opened, lists for every point each booked product with its dates, product type, tariff used and tariff
+
+#### Scenario: Exact tariff in its own unit
+- **WHEN** the real tariffs are loaded, the route is BG to HU, the period is 2026-10-01 to 2027-03-31, and Bulgartransgaz books Q4 2026 at the exit Kireevo/Zaychar (BG>RS)
+- **THEN** that Details row's tariff reads "0.1211087 EUR per kWh/d", and the Gastrans entry Kireevo/Zaychar (BG>RS) row for Q4 2026 reads "1.88 EUR per kWh/h"
 
 ### Requirement: Cost per MWh
 Each point's cost SHALL be the sum, over the products its TSO books, of that point's own price for the product (the row valid on the product's first day; for daily days, the sum of the point's daily prices), so that a TSO's cost is the sum of its points' costs. A point's per-MWh figure SHALL be its cost divided by the energy one unit of its capacity carries on the requested days, times 1000, which assumes the booked capacity is used fully: for a point priced per kWh/h, cost / (24 x requested days) x 1000; for a point priced per kWh/d, cost / requested days x 1000. The figure is in the point's currency; an FGSZ point's HUF/MWh is converted to EUR/MWh by dividing by the FX rate, and the EUR points' figures are already EUR/MWh. The route's EUR/MWh SHALL be the sum of its points' EUR/MWh figures, which equals the sum of its TSOs' figures. Over-booked days outside the period add to the cost but not to the energy.
@@ -77,6 +81,17 @@ The tab SHALL show an input box for the day's HUF-per-EUR rate only when the rou
 #### Scenario: Invalid rate
 - **WHEN** the rate is 0 or "abc"
 - **THEN** a message says the rate must be a positive number and no FGSZ or route EUR figure is shown
+
+### Requirement: Display precision
+The tab SHALL show every price and cost figure (EUR/MWh, HUF/MWh, HUF per kWh/h, EUR per kWh/h and EUR per kWh/d) with 4 decimals, except the tariffs in the "Details" section, which SHALL be shown exactly as in the tariff file, without rounding or trailing zeros. Rounding is for display only and SHALL NOT influence which products the optimizer chooses or the route total.
+
+#### Scenario: Four decimals
+- **WHEN** EUR/MWh is 5.32100000
+- **THEN** it is displayed as 5.3210
+
+#### Scenario: Exact tariff
+- **WHEN** a tariff cell is 375.627714 HUF per kWh/h
+- **THEN** the Details section shows it as 375.627714, not 375.6277
 
 ## ADDED Requirements
 

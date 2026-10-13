@@ -12,7 +12,7 @@ import streamlit as st
 
 from core import fee, money, periods, points
 from core.labels import products_text
-from core.route import RouteError, calculate_route, point_tariff_used
+from core.route import RouteError, calculate_route, point_tariff, point_tariff_used
 from core.tariffs import INTERRUPTIBLE, LoadResult, load_tariffs, resolve_tariff_path
 
 st.set_page_config(page_title="Route Tariff and Capacity Fee Calculator", layout="wide")
@@ -57,6 +57,12 @@ def dec4(value: Fraction | None) -> str:
 def plain_rate(rate: Fraction) -> str:
     text = money.format_decimal(rate, 4)
     return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def tariff_text(leg, prices: tuple[Fraction, ...], product: str) -> str:
+    """Exact tariff cell(s) in the leg's own unit, e.g. "0.1211087 EUR per kWh/d"."""
+    unit = f"{leg.currency} per {leg.unit}" + (" per day" if product == "daily" else "")
+    return ", ".join(money.format_exact(price) for price in prices) + f" {unit}"
 
 
 def dates_text(start: date, end: date) -> str:
@@ -137,11 +143,13 @@ def route_tab(table) -> None:
     with st.expander("Details", expanded=False):
         details = [
             (p.tso_name, p.cleaned_name, p.direction, dates_text(seg.start, seg.end), seg.product,
-             point_tariff_used(table, p, seg))
+             point_tariff_used(table, p, seg), tariff_text(by_point[p][0], point_tariff(table, p, seg), seg.product))
             for p in result.points for seg in by_point[p][0].plan.segments
         ]
-        st.dataframe(pd.DataFrame(details, columns=["TSO", "Point", "Direction", "Dates", "Product", "Tariff used"]),
-                     hide_index=True, width="stretch")
+        st.dataframe(
+            pd.DataFrame(details, columns=["TSO", "Point", "Direction", "Dates", "Product", "Tariff used", "Tariff"]),
+            hide_index=True, width="stretch",
+        )
 
 
 # --- tab 2 -----------------------------------------------------------------------------------

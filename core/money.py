@@ -72,6 +72,16 @@ def format_decimal(amount: Fraction, places: int) -> str:
         return str(value.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP))
 
 
+def format_exact(amount: Fraction) -> str:
+    """The exact decimal value, without rounding or trailing zeros (tariff
+    cells read from the file always have a finite decimal expansion)."""
+    with localcontext() as ctx:
+        ctx.prec = 60
+        value = Decimal(amount.numerator) / Decimal(amount.denominator)
+    text = format(value.normalize(), "f")
+    return "0" if text in ("-0", "0") else text
+
+
 def format_whole(amount: int) -> str:
     return f"{amount:,}"
 

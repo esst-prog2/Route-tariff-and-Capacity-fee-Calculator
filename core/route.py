@@ -103,6 +103,21 @@ def point_tariff_used(table: TariffTable, point: Point, segment: Segment) -> str
     return TsoOracle(table, [point]).sources(point, segment.start, last)
 
 
+def point_tariff(table: TariffTable, point: Point, segment: Segment) -> tuple[Fraction, ...]:
+    """One point's tariff for a booked product, in its own currency and unit:
+    the single cell of a yearly, quarterly or monthly product, or the distinct
+    day prices of a daily stretch (one value unless the rows change)."""
+    oracle = TsoOracle(table, [point])
+    if segment.product != DAILY:
+        return (segment_price(oracle, segment),)
+    prices: list[Fraction] = []
+    for day in periods.iter_days(segment.start, segment.end):
+        price = oracle.day_price(day)
+        if price not in prices:
+            prices.append(price)
+    return tuple(prices)
+
+
 @dataclass(frozen=True)
 class TsoLeg:
     """One TSO's part of a route: its points and its cheapest plan."""

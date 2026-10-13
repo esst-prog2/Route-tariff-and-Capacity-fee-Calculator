@@ -17,6 +17,11 @@
 - [x] 4.1 Rebuild `route_tab` in `app.py`: one point table with Products and EUR/MWh, the over-booking note, the route total (cheapest, comparison, saving, label note), the FX prompt when the rate is missing, and a closed "Details" expander with tariff used per point and product; remove the per-TSO product tables and the summary per TSO; verify by running the app headlessly in `tests/test_app.py`
 - [x] 4.2 Rewrite the tab 1 app tests for the new layout (columns, EUR/MWh cells adding up to the route total, no per-TSO tables, empty FGSZ cell and prompt without a rate, saving = comparison - cheapest, Details present) and verify `python -m pytest` passes
 
+## 4b. Exact tariff in the Details section
+
+- [x] 4b.1 Add the point's tariff for each booked product (one cell for yearly, quarterly and monthly products; the day price for daily ones) and an exact number format without rounding; verify with route and money unit tests, including the "Exact tariff in its own unit" scenario on the real tariffs
+- [x] 4b.2 Add the "Tariff" column as the last Details column ("<value> <currency> per <unit>", "per day" for daily rows) and verify it in `tests/test_app.py`
+
 ## 5. Docs and wrap-up
 
 - [x] 5.1 Rewrite the tab 1 part of README section 1 for the new layout and verify every figure it quotes against the app

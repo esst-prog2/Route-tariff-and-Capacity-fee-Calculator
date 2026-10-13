@@ -10,7 +10,7 @@ import pytest
 from core import money, points
 from core.optimizer import DAILY, MONTHLY, QUARTERLY, Plan
 from core.points import BULGARTRANSGAZ, FGSZ, GASTRANS
-from core.route import RouteError, RouteResult, TsoLeg, TsoOracle, calculate_route, parse_fx_rate
+from core.route import RouteError, RouteResult, TsoLeg, TsoOracle, calculate_route, parse_fx_rate, point_tariff
 from core.tariffs import load_tariffs
 
 from .helpers import make_row, make_table
@@ -359,3 +359,19 @@ def test_bg_to_hu_on_the_real_tariffs():
     assert [fmt(v) for v in (result.eur_per_mwh, result.comparison_eur_per_mwh,
                              result.comparison_saving_eur_per_mwh)] == ["3.6957", "3.9913", "0.2956"]
     assert result.comparison_label == "Without quarterly products"
+
+
+def test_exact_tariff_per_point_on_the_real_tariffs():
+    table = load_tariffs(Path(__file__).resolve().parent.parent / "data" / "real" / "tariffs_real.xlsx").table
+    result = calculate_route(table, "BG", "HU", date(2026, 10, 1), date(2027, 3, 31), "400")
+    bg, gastrans = leg(result, BULGARTRANSGAZ), leg(result, GASTRANS)
+    q4 = bg.plan.segments[0]
+    assert money.format_exact(point_tariff(table, bg.points[0], q4)[0]) == "0.1211087"
+    assert money.format_exact(point_tariff(table, gastrans.points[0], gastrans.plan.segments[0])[0]) == "1.88"
+
+
+def test_daily_tariff_is_the_price_of_one_day():
+    table = route_table(valid_from="2026-10-01", valid_to=None)  # D 4 per point
+    result = calculate_route(table, "BG", "HU", date(2026, 12, 1), date(2026, 12, 5), "400")
+    fgsz = leg(result, FGSZ)
+    assert point_tariff(table, fgsz.points[0], fgsz.plan.segments[0]) == (4,)
