@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines the point catalog built from the tariff data (single sides, LNG entries and bundled border points of the 21 TSOs), how each point is identified in the tariff data and labelled in the UI, and the HU - RS - BG corridor the Route Tariff Calculator runs along.
+Defines the point catalog built from the tariff data (single sides, LNG entries and bundled border points of the 21 TSOs), how each point is identified in the tariff data and labelled in the UI, and the network of border crossings the Route Tariff Calculator's routes run on.
 
 ## Requirements
 
@@ -63,7 +63,7 @@ Cleaned names SHALL drop the country suffix and the flow from the source name, s
 - **THEN** it contains "Mosonmagyaróvár AT>HU (Gas Connect Austria + FGSZ)" and "Mosonmagyaróvár" is spelled the same for both sides
 
 ### Requirement: TSO dropdown
-The Capacity Fee Calculator SHALL show a TSO dropdown only for the Single side booking type; it SHALL offer every TSO in scope that has at least one single side, by full name, and its point list SHALL be the single sides of the selected TSO. The Bundled and LNG entry booking types SHALL have no TSO dropdown, since their labels name the TSOs. The Route Tariff Calculator SHALL NOT have a TSO dropdown; the TSOs on a route follow from its beginning and ending countries.
+The Capacity Fee Calculator SHALL show a TSO dropdown only for the Single side booking type; it SHALL offer every TSO in scope that has at least one single side, by full name, and its point list SHALL be the single sides of the selected TSO. The Bundled and LNG entry booking types SHALL have no TSO dropdown, since their labels name the TSOs. The Route Tariff Calculator SHALL NOT have a TSO dropdown; the TSOs on a route follow from the border points chosen for it.
 
 #### Scenario: Three TSOs on tab 2
 - **WHEN** tab 2 is opened with the booking type Single side on the real tariff file
@@ -76,17 +76,6 @@ The Capacity Fee Calculator SHALL show a TSO dropdown only for the Single side b
 #### Scenario: No TSO dropdown on tab 1
 - **WHEN** tab 1 is opened
 - **THEN** it has no TSO dropdown
-
-### Requirement: Corridor topology
-The system SHALL know the HU - RS - BG corridor as three countries in this order, each with one TSO (HU: FGSZ, RS: Gastrans, BG: Bulgartransgaz), and two borders: HU - RS at Kiskundorozsma 2 (EIC 21Z000000000505P) and RS - BG at Kireevo/Zaychar (EIC 58Z-000000007-KZ). Crossing a border from country X to country Y SHALL use X's TSO's exit with flow X>Y and Y's TSO's entry with flow X>Y at that border.
-
-#### Scenario: Crossing from RS to HU
-- **WHEN** gas crosses the HU - RS border from RS to HU
-- **THEN** the points used are the Gastrans exit Kiskundorozsma 2 (RS>HU) and the FGSZ entry Kiskundorozsma 2 (RS>HU)
-
-#### Scenario: Crossing from HU to RS
-- **WHEN** gas crosses the HU - RS border from HU to RS
-- **THEN** the points used are the FGSZ exit Kiskundorozsma 2 (HU>RS) and the Gastrans entry Kiskundorozsma 2 (HU>RS), both Interruptible, and not the FGSZ exit Kiskundorozsma (HU>RS, EIC 21Z000000000154S)
 
 ### Requirement: Bundled points
 The system SHALL offer a bundled point for every border crossing where one TSO's exit and another TSO's entry have the same EIC and the same flow, and both are Firm. A bundled point SHALL consist of exactly those two sides. Crossings where either side is Interruptible SHALL NOT be offered as bundled points; their sides remain available as single sides. At Baumgarten, whose two sides have different EICs, the system SHALL pair Eustream's Baumgarten point (EIC 21Y---A001A023-Y) with Gas Connect Austria's WAG point (EIC 21Z000000000163R): Eustream exit with WAG entry for SK>AT, and WAG exit with Eustream entry for AT>SK. On the real tariff file there SHALL be 43 bundled points.
@@ -106,3 +95,18 @@ The system SHALL offer a bundled point for every border crossing where one TSO's
 #### Scenario: Baumgarten bundles
 - **WHEN** the bundled point dropdown is shown on the real tariff file
 - **THEN** it offers "Baumgarten SK>AT (Eustream + Gas Connect Austria)" and "Baumgarten AT>SK (Gas Connect Austria + Eustream)", both using the WAG point on the Austrian side, and no Baumgarten bundle with Trans Austria Gasleitung
+
+### Requirement: Network topology
+The system SHALL build the network that tab 1 routes run on from the point catalog. Each point's flow "X>Y" names the country it leaves and the country it enters, using the codes of the tariff data (for example CR for Croatia). A border crossing from X to Y at a point SHALL consist of an exit with flow X>Y of one TSO and an entry with flow X>Y of another TSO at the same point: the same EIC, or for Baumgarten the Eustream point (EIC 21Y---A001A023-Y) with Gas Connect Austria's WAG point (EIC 21Z000000000163R). Each side SHALL be Firm, or Interruptible where it has no Firm row. A map point SHALL be one place where such crossings exist between two countries, offered for both directions where both exist; it is identified by its cleaned name and its two countries. The countries a route can begin or end in SHALL be the countries of these crossings except the pipelines TAP and ICGB, which have their own TSO but no market of their own: on the real tariff file AT, BG, CR, CZ, DE, GR, HU, IT, NL, PL, RO, RS, SI, SK and UA. The points touching TAP or ICGB (Stara Zagora, Komotini, Nea Mesimvria) SHALL NOT be map points. A country MAY have several TSOs; each crossing uses the TSOs that operate its point.
+
+#### Scenario: Map points on the real file
+- **WHEN** the real tariff file is loaded
+- **THEN** there are 22 map points: Mosonmagyaróvár, VIP Oberkappel, Tarvisio/Arnoldstein, Murfeld/Ceršak, Baumgarten, Kulata/Sidirokastron, Negru Voda 1/Kardam, Ruse/Giurgiu, Kireevo/Zaychar, Drávaszerdahely, Rogatec, VIP Brandov-GASPOOL, Cieszyn, Lanžhot, VIP TTF-THE-H, Csanádpalota, Kiskundorozsma 2, Balassagyarmat, VIP Bereg, Gorizia/Šempeter, Vyrava and Uzhgorod/Velké Kapušany
+
+#### Scenario: Crossing at a point with two TSOs in one country
+- **WHEN** gas crosses Tarvisio/Arnoldstein from AT to IT
+- **THEN** the crossing is the Trans Austria Gasleitung exit (AT>IT) and the Snam Rete Gas entry (AT>IT), while a crossing at Mosonmagyaróvár into AT uses Gas Connect Austria's entry
+
+#### Scenario: Points without a partner are not map points
+- **WHEN** the real tariff file is loaded
+- **THEN** Kiskundorozsma (HU>RS, EIC 21Z000000000154S), GCP GAZ-SYSTEM/UA TSO, Beregdaróc, Kipi, Strandzha 1/Malkoclar, Kyustendil/Zidilovo and Mazara del Vallo are not map points, so no route can go from UA to PL

@@ -1,5 +1,5 @@
-"""Route Tariff Calculator: a hub-to-hub route along the HU - RS - BG corridor
-plus a booking period.
+"""Route Tariff Calculator: a hub-to-hub route from a beginning country across
+chosen border points of the network, plus a booking period.
 
 The route's points are grouped by TSO; each TSO is optimised on its own, in
 its own currency and capacity unit, and only the per-MWh results are turned
@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from fractions import Fraction
+from typing import Mapping
 
 from . import periods, points
 from .money import parse_number
@@ -19,7 +20,12 @@ from .optimizer import DAILY, MONTHLY, PRODUCTS, QUARTERLY, YEARLY, Plan, PriceU
 from .points import Point
 from .tariffs import TSO_FORMATS, NoTariffRow, TariffRow, TariffTable
 
-FX_MESSAGE = "The FX rate must be a positive number (HUF per 1 EUR)."
+EUR = "EUR"
+FIRST_POINT_MESSAGE = "Choose the first border point of the route on the map or in the Next point list."
+
+
+def rate_message(currency: str) -> str:
+    return f"The {currency} per EUR rate must be a positive number."
 HOURS_PER_UNIT = {"kWh/h": 24, "kWh/d": 1}  # energy one unit of capacity carries per day, in kWh
 
 
@@ -145,7 +151,7 @@ class TsoLeg:
     tso: str
     points: tuple[Point, ...]
     plan: Plan
-    fx_rate: Fraction | None  # HUF per EUR; only used for a HUF leg
+    fx_rate: Fraction | None  # units of the leg's currency per EUR; None for EUR or while missing
     point_costs: tuple[Fraction, ...] = ()  # each point's own price for the chosen products, in `points` order
     comparison: Plan | None = None  # cheapest plan without the plan's longest product; None when daily only
 
@@ -205,14 +211,24 @@ class TsoLeg:
 class RouteResult:
     begin: str
     end: str
+    route_text: str  # e.g. "BG > Kireevo/Zaychar > RS > Kiskundorozsma 2 > HU"
     points: tuple[Point, ...]
     legs: tuple[TsoLeg, ...]
-    fx_rate: Fraction | None  # HUF per EUR, None when not entered, invalid or not needed
-    fx_message: str | None  # set when a rate was typed but is not usable
+    rates: tuple[tuple[str, Fraction | None], ...]  # each non-EUR currency on the route and its usable rate
+    invalid_rates: tuple[str, ...] = ()  # currencies whose typed rate is not a positive number
 
     @property
-    def needs_fx(self) -> bool:
-        return any(leg.currency == "HUF" for leg in self.legs)
+    def rate_currencies(self) -> list[str]:
+        return [currency for currency, _ in self.rates]
+
+    @property
+    def missing_rates(self) -> list[str]:
+        """Currencies whose box is still blank."""
+        return [c for c, rate in self.rates if rate is None and c not in self.invalid_rates]
+
+    @property
+    def rates_used(self) -> list[tuple[str, Fraction]]:
+        return [(c, rate) for c, rate in self.rates if rate is not None]
 
     @property
     def days(self) -> int:
@@ -278,7 +294,7 @@ class RouteResult:
         return "; ".join(f"{', '.join(names)} without {product}" for product, names in groups.items())
 
 
-def parse_fx_rate(text) -> tuple[Fraction | None, str | None]:
+def parse_fx_rate(text, currency: str = "HUF") -> tuple[Fraction | None, str | None]:
     """(rate, None) for a positive number, (None, None) for a blank box,
     (None, message) for anything else."""
     if text is None or not str(text).strip():
@@ -286,9 +302,9 @@ def parse_fx_rate(text) -> tuple[Fraction | None, str | None]:
     try:
         rate = parse_number(text)
     except ValueError:
-        return None, FX_MESSAGE
+        return None, rate_message(currency)
     if rate <= 0:
-        return None, FX_MESSAGE
+        return None, rate_message(currency)
     return rate, None
 
 
@@ -303,25 +319,36 @@ def group_by_tso(route: list[Point]) -> list[tuple[str, list[Point]]]:
 def calculate_route(
     table: TariffTable,
     begin: str,
-    end_country: str,
+    route_points: list[str],
     start: date | None,
     end: date | None,
-    fx_rate_text="",
+    rate_texts: Mapping[str, str] | None = None,
+    network: points.Network | None = None,
 ) -> RouteResult | RouteError:
-    if begin == end_country:
-        return RouteError(f"This route is not possible: it begins and ends in {begin}, so it crosses no border.")
+    """`route_points` are the labels of the map points crossed in order;
+    `rate_texts` maps a currency to the rate typed for it (units per 1 EUR)."""
+    network = network or points.build_network(points.build_catalog(table))
     try:
-        route = points.route_points(begin, end_country)
-    except ValueError:
-        return RouteError(f"This route is not possible: {begin} to {end_country} is not on the HU - RS - BG corridor.")
+        route = points.route_crossing_points(network, begin, route_points)
+    except points.RouteNotPossible as error:
+        return RouteError(str(error))
+    if not route:
+        return RouteError(FIRST_POINT_MESSAGE)
     if start is None or end is None:
         return RouteError("The period is invalid: enter a valid start date and end date.")
     if end < start:
         return RouteError("The period is invalid: the end date is before the start date.")
 
     groups = group_by_tso(route)
-    needs_fx = any(TSO_FORMATS[tso][0] == "HUF" for tso, _ in groups)
-    fx_rate, fx_message = parse_fx_rate(fx_rate_text) if needs_fx else (None, None)
+    rate_texts = rate_texts or {}
+    rates: dict[str, Fraction | None] = {}
+    invalid: list[str] = []
+    for tso, _ in groups:
+        currency = TSO_FORMATS[tso][0]
+        if currency != EUR and currency not in rates:
+            rates[currency], message = parse_fx_rate(rate_texts.get(currency), currency)
+            if message:
+                invalid.append(currency)
 
     legs = []
     for tso, tso_points in groups:
@@ -338,6 +365,10 @@ def calculate_route(
         if longest != DAILY:
             shorter = PRODUCTS[PRODUCTS.index(longest) - 1]
             comparison = optimize(start, end, TsoOracle(table, tso_points), longest=shorter)
-        legs.append(TsoLeg(tso, tuple(tso_points), plan, fx_rate, point_costs, comparison))
+        rate = rates.get(TSO_FORMATS[tso][0])
+        legs.append(TsoLeg(tso, tuple(tso_points), plan, rate, point_costs, comparison))
 
-    return RouteResult(begin, end_country, tuple(route), tuple(legs), fx_rate, fx_message)
+    return RouteResult(
+        begin, points.route_end(network, begin, route_points), points.route_text(network, begin, route_points),
+        tuple(route), tuple(legs), tuple(rates.items()), tuple(invalid),
+    )

@@ -12,7 +12,7 @@ from core.optimizer import MONTHLY, QUARTERLY, optimize
 from core.route import RouteError, RouteResult, TsoOracle, calculate_route
 from core.tariffs import DEFAULT_SAMPLE_PATH, load_tariffs
 
-from .helpers import make_row, make_table
+from .helpers import KISKUNDOROZSMA_2, corridor, corridor_points, make_row, make_table
 
 
 @pytest.fixture(scope="module")
@@ -50,24 +50,24 @@ def test_monthly_breakdown_sums_to_the_exact_total_for_every_point_and_instrumen
 
 
 # 2. Given a route that is not possible, it shows a message instead of crashing.
-def test_every_country_pair_returns_a_result_or_a_message(sample):
-    results = {
-        (a, b): calculate_route(sample, a, b, date(2026, 10, 1), date(2027, 3, 31), "400")
-        for a, b in product(points.COUNTRIES, repeat=2)
-    }
-    impossible = {k for k, v in results.items() if isinstance(v, RouteError)}
-    assert impossible == {("HU", "HU"), ("RS", "RS"), ("BG", "BG")}
-    assert all("not possible" in results[k].message for k in impossible)
-    assert all(isinstance(v, RouteResult) for k, v in results.items() if k not in impossible)
+def test_every_corridor_route_returns_a_result_and_a_return_trip_a_message(sample):
+    pairs = [(a, b) for a, b in product(["HU", "RS", "BG"], repeat=2) if a != b]
+    for a, b in pairs:
+        result = calculate_route(sample, *corridor(a, b), date(2026, 10, 1), date(2027, 3, 31), {"HUF": "400"})
+        assert isinstance(result, RouteResult), (a, b, result)
+    back = calculate_route(sample, "HU", [KISKUNDOROZSMA_2, KISKUNDOROZSMA_2], date(2026, 10, 1), date(2027, 3, 31))
+    assert isinstance(back, RouteError) and "not possible" in back.message.lower()
 
 
 def test_impossible_requests_are_messages_not_exceptions(sample):
     for args in [
-        ("BG", "HU", date(2026, 12, 31), date(2026, 12, 1)),   # end before start
-        ("BG", "HU", None, date(2026, 12, 1)),                 # blank date
-        ("BG", "HU", date(2025, 12, 1), date(2026, 1, 5)),     # before the Bulgartransgaz EUR rows
-        ("HU", "RS", date(2001, 1, 1), date(2001, 1, 5)),      # before any tariff
-        ("RS", "RS", date(2026, 12, 1), date(2026, 12, 5)),    # same country
+        (*corridor("BG", "HU"), date(2026, 12, 31), date(2026, 12, 1)),   # end before start
+        (*corridor("BG", "HU"), None, date(2026, 12, 1)),                 # blank date
+        (*corridor("BG", "HU"), date(2025, 12, 1), date(2026, 1, 5)),     # before the Bulgartransgaz EUR rows
+        (*corridor("HU", "RS"), date(2001, 1, 1), date(2001, 1, 5)),      # before any tariff
+        ("RS", [KISKUNDOROZSMA_2, KISKUNDOROZSMA_2], date(2026, 12, 1), date(2026, 12, 5)),  # back into RS
+        ("BG", ["Vyrava (PL - SK)"], date(2026, 12, 1), date(2026, 12, 5)),  # not on BG's border
+        ("HU", [], date(2026, 12, 1), date(2026, 12, 5)),                 # no point yet
     ]:
         result = calculate_route(sample, *args)
         assert isinstance(result, RouteError) and result.message
@@ -75,7 +75,7 @@ def test_impossible_requests_are_messages_not_exceptions(sample):
 
 # 3. Given a booking that crosses 1 October, old tariff up to 30 September, new one from 1 October.
 def test_period_crossing_the_gas_year_boundary_uses_old_then_new_tariff(sample):
-    result = calculate_route(sample, "BG", "HU", date(2026, 9, 20), date(2026, 10, 10), "400")
+    result = calculate_route(sample, *corridor("BG", "HU"), date(2026, 9, 20), date(2026, 10, 10), {"HUF": "400"})
     for l in result.legs:
         old, new = l.plan.segments
         assert (old.start, old.end, new.start, new.end) == (
@@ -90,7 +90,7 @@ def test_period_crossing_the_gas_year_boundary_uses_old_then_new_tariff(sample):
 
 # 4. Open-ended rows apply to later dates.
 def test_open_ended_row_prices_dates_years_after_it_starts(sample):
-    result = calculate_route(sample, "BG", "HU", date(2035, 3, 1), date(2035, 3, 31), "400")
+    result = calculate_route(sample, *corridor("BG", "HU"), date(2035, 3, 1), date(2035, 3, 31), {"HUF": "400"})
     assert isinstance(result, RouteResult)
     for l in result.legs:
         assert l.plan.segments[0].product == MONTHLY
@@ -109,9 +109,9 @@ def test_quarter_versus_three_months_flips_with_the_prices():
         table = make_table(*[
             make_row(eic=p.eic, direction=p.direction, operator=p.tso, valid_from="2026-10-01", valid_to=None,
                      prices=prices, **formats[p.tso])
-            for p in points.route_points("BG", "HU")
+            for p in corridor_points("BG", "HU")
         ])
-        result = calculate_route(table, "BG", "HU", date(2026, 10, 1), date(2026, 12, 31))
+        result = calculate_route(table, *corridor("BG", "HU"), date(2026, 10, 1), date(2026, 12, 31))
         return [s.product for s in leg(result, "Gastran").plan.segments]
 
     assert products(250) == [QUARTERLY]
@@ -120,7 +120,7 @@ def test_quarter_versus_three_months_flips_with_the_prices():
 
 # README demo (synthetic sample): guards the numbers quoted in README.md section 1.
 def test_readme_demo_figures(sample):
-    route = calculate_route(sample, "BG", "HU", date(2026, 10, 1), date(2027, 3, 31), "400")
+    route = calculate_route(sample, *corridor("BG", "HU"), date(2026, 10, 1), date(2027, 3, 31), {"HUF": "400"})
     fmt = lambda value: money.format_decimal(value, 4)
     assert [p.cleaned_name for p in route.points] == [
         "Kireevo/Zaychar (BG>RS)", "Kireevo/Zaychar (BG>RS)", "Kiskundorozsma 2 (RS>HU)", "Kiskundorozsma 2 (RS>HU)",
@@ -136,7 +136,7 @@ def test_readme_demo_figures(sample):
     assert fmt(route.all_daily_eur_per_mwh) == "14.0247"
     assert fmt(route.saving_eur_per_mwh) == "5.8297"
 
-    over = calculate_route(sample, "BG", "HU", date(2026, 10, 2), date(2026, 12, 30), "400")
+    over = calculate_route(sample, *corridor("BG", "HU"), date(2026, 10, 2), date(2026, 12, 30), {"HUF": "400"})
     assert all(l.plan.days_outside == 2 for l in over.legs)
 
     start, end = fee.resolve_period(fee.QUARTER, year=2026, quarter=4)
