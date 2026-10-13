@@ -11,7 +11,8 @@ import pandas as pd
 import streamlit as st
 
 from core import fee, money, periods, points
-from core.route import RouteError, calculate_route
+from core.labels import products_text
+from core.route import RouteError, calculate_route, point_tariff_used
 from core.tariffs import INTERRUPTIBLE, LoadResult, load_tariffs, resolve_tariff_path
 
 st.set_page_config(page_title="Route Tariff and Capacity Fee Calculator", layout="wide")
@@ -90,6 +91,7 @@ def route_tab(table) -> None:
 
     st.markdown("**Network points on the route**")
     capacity_types = [table.capacity_type(*p.key) for p in result.points]
+    by_point = {p: (leg, i) for leg in result.legs for i, p in enumerate(leg.points)}
     st.dataframe(
         pd.DataFrame(
             {
@@ -99,6 +101,8 @@ def route_tab(table) -> None:
                 "EIC": [p.eic for p in result.points],
                 "Direction": [p.direction for p in result.points],
                 "Capacity type": capacity_types,
+                "Products": [products_text(by_point[p][0].plan) for p in result.points],
+                "EUR/MWh": [dec4(by_point[p][0].point_eur_per_mwh[by_point[p][1]]) for p in result.points],
             }
         ),
         hide_index=True, width="stretch",
@@ -107,56 +111,20 @@ def route_tab(table) -> None:
         st.warning("Interruptible capacity is used where a point has no Firm tariff; "
                    "the TSO can interrupt it.")
 
-    for leg in result.legs:
-        unit_text = f"{leg.currency} per {leg.unit}"
-        names = ", ".join(f"{p.direction.lower()} {p.cleaned_name}" for p in leg.points)
-        st.markdown(f"**{leg.tso_name}**: {names}. Prices in {unit_text} for the product period.")
-        st.dataframe(
-            pd.DataFrame(
-                {
-                    "Segment": [dates_text(s.start, s.end) for s in leg.plan.segments],
-                    "Product": [s.product for s in leg.plan.segments],
-                    unit_text: [dec4(s.price) for s in leg.plan.segments],
-                    "Days outside period": [s.days_outside(leg.plan.start, leg.plan.end) for s in leg.plan.segments],
-                    "Tariff used": [s.tariff_used for s in leg.plan.segments],
-                }
-            ),
-            hide_index=True, width="stretch",
-        )
-
     over_booked = [f"{leg.tso_name} {leg.plan.days_outside} day(s)" for leg in result.legs if leg.plan.days_outside]
     if over_booked:
         st.info(f"Over-booking: {', '.join(over_booked)} outside the booking period, because a longer product "
                 "costs less than covering only the booked days. Per-MWh figures use the booked days only.")
 
-    st.markdown("**Summary per TSO**")
-    st.dataframe(
-        pd.DataFrame(
-            {
-                "TSO": [leg.tso_name for leg in result.legs],
-                "Unit": [f"{leg.currency} per {leg.unit}" for leg in result.legs],
-                "Cheapest": [dec4(leg.plan.total) for leg in result.legs],
-                "All daily": [dec4(leg.plan.all_daily_total) for leg in result.legs],
-                "Saving": [dec4(leg.plan.saving) for leg in result.legs],
-                "Per MWh": [f"{dec4(leg.per_mwh)} {leg.currency}/MWh" for leg in result.legs],
-                "EUR/MWh": [dec4(leg.eur_per_mwh) for leg in result.legs],
-            }
-        ),
-        hide_index=True, width="stretch",
-    )
-
     if result.eur_per_mwh is not None:
         st.markdown("**Route total (EUR/MWh)**")
-        st.dataframe(
-            pd.DataFrame(
-                {
-                    "": ["Cheapest combination", "All daily", "Saving"],
-                    "EUR/MWh": [dec4(result.eur_per_mwh), dec4(result.all_daily_eur_per_mwh),
-                                dec4(result.saving_eur_per_mwh)],
-                }
-            ),
-            hide_index=True, width="stretch",
-        )
+        labels, values = ["Cheapest combination"], [dec4(result.eur_per_mwh)]
+        if result.comparison_label:
+            labels += [result.comparison_label, "Saving"]
+            values += [dec4(result.comparison_eur_per_mwh), dec4(result.comparison_saving_eur_per_mwh)]
+        st.dataframe(pd.DataFrame({"": labels, "EUR/MWh": values}), hide_index=True, width="stretch")
+        if result.comparison_note:
+            st.caption(f"Compared per TSO: {result.comparison_note}.")
         note = "Per-MWh figures assume the booked capacity is used fully on the booked days."
         if result.fx_rate is not None:
             note = f"FGSZ's EUR/MWh at 1 EUR = {plain_rate(result.fx_rate)} HUF. " + note
@@ -165,6 +133,15 @@ def route_tab(table) -> None:
         st.warning(result.fx_message)
     else:
         st.info("Enter today's HUF per EUR rate to see FGSZ's and the route's EUR/MWh.")
+
+    with st.expander("Details", expanded=False):
+        details = [
+            (p.tso_name, p.cleaned_name, p.direction, dates_text(seg.start, seg.end), seg.product,
+             point_tariff_used(table, p, seg))
+            for p in result.points for seg in by_point[p][0].plan.segments
+        ]
+        st.dataframe(pd.DataFrame(details, columns=["TSO", "Point", "Direction", "Dates", "Product", "Tariff used"]),
+                     hide_index=True, width="stretch")
 
 
 # --- tab 2 -----------------------------------------------------------------------------------

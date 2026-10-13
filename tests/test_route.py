@@ -3,6 +3,7 @@
 
 from datetime import date
 from fractions import Fraction
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +11,7 @@ from core import money, points
 from core.optimizer import DAILY, MONTHLY, QUARTERLY, Plan
 from core.points import BULGARTRANSGAZ, FGSZ, GASTRANS
 from core.route import RouteError, RouteResult, TsoLeg, TsoOracle, calculate_route, parse_fx_rate
+from core.tariffs import load_tariffs
 
 from .helpers import make_row, make_table
 
@@ -270,3 +272,90 @@ def test_invalid_rate_keeps_the_own_currency_figures_and_carries_a_message():
     assert isinstance(result, RouteResult) and result.needs_fx
     assert result.eur_per_mwh is None and "positive number" in result.fx_message
     assert leg(result, FGSZ).per_mwh > 0 and leg(result, GASTRANS).eur_per_mwh is not None
+
+
+# --- per-point figures (tab1-eur-per-point) ------------------------------------------------------
+
+@pytest.mark.parametrize("begin,end", [("BG", "HU"), ("HU", "BG"), ("RS", "HU"), ("BG", "RS")])
+@pytest.mark.parametrize("start,stop", [
+    (date(2026, 10, 1), date(2027, 3, 31)), (date(2026, 10, 2), date(2026, 12, 30)),
+    (date(2026, 12, 5), date(2027, 1, 15)), (date(2026, 10, 1), date(2027, 9, 30)),
+])
+def test_point_costs_add_up_exactly_to_the_leg_and_the_route(begin, end, start, stop):
+    table = route_table(begin, end, prices={GASTRANS: {"M_Dec": 130.0, "Q1_Jan": 260.0}},
+                        valid_from="2026-10-01", valid_to=None)
+    result = calculate_route(table, begin, end, start, stop, "400")
+    for l in result.legs:
+        assert len(l.point_costs) == len(l.points) and sum(l.point_costs) == l.plan.total
+    assert sum(x for l in result.legs for x in l.point_eur_per_mwh) == result.eur_per_mwh
+
+
+def test_each_point_is_costed_with_its_own_prices_for_the_shared_products():
+    entry, exit_ = [p for p in points.route_points("BG", "HU") if p.tso == GASTRANS]
+    table = make_table(*[
+        make_row(eic=p.eic, direction=p.direction, operator=p.tso, prices=prices, **FORMATS[p.tso],
+                 valid_from="2026-10-01", valid_to=None)
+        for p, prices in [(p, {}) for p in points.route_points("BG", "HU") if p.tso != GASTRANS]
+        + [(entry, {"Q4_Oct": 100.0}), (exit_, {"Q4_Oct": 150.0})]
+    ])
+    result = calculate_route(table, "BG", "HU", date(2026, 10, 1), date(2026, 12, 31), "400")
+    gastrans = leg(result, GASTRANS)
+    assert products(result, GASTRANS) == [QUARTERLY]
+    assert gastrans.point_costs == (100, 150)
+    assert gastrans.point_eur_per_mwh == (Fraction(100) / (24 * 92) * 1000, Fraction(150) / (24 * 92) * 1000)
+
+
+def test_without_a_rate_the_fgsz_point_has_no_eur_figure():
+    table = route_table(valid_from="2026-10-01", valid_to=None)
+    result = calculate_route(table, "BG", "HU", date(2026, 10, 1), date(2026, 12, 31), "")
+    assert leg(result, FGSZ).point_eur_per_mwh == (None,)
+    assert None not in leg(result, GASTRANS).point_eur_per_mwh
+    assert result.comparison_eur_per_mwh is None and result.comparison_saving_eur_per_mwh is None
+
+
+# --- next shorter product comparison -----------------------------------------------------------
+
+def test_quarters_are_compared_without_quarterly_products():
+    cheap_q4 = {"Q4_Oct": 250.0}  # per point: Q4 250 against three months of 100
+    table = route_table(prices={tso: cheap_q4 for tso in FORMATS}, valid_from="2026-10-01", valid_to=None)
+    result = calculate_route(table, "BG", "HU", date(2026, 10, 1), date(2026, 12, 31), "400")
+    assert all(products(result, tso) == [QUARTERLY] for tso in (FGSZ, GASTRANS, BULGARTRANSGAZ))
+    assert all(l.comparison.total == 300 * len(l.points) for l in result.legs)  # three months of 100
+    assert result.comparison_label == "Without quarterly products" and result.comparison_note is None
+    assert result.comparison_saving_eur_per_mwh == result.comparison_eur_per_mwh - result.eur_per_mwh > 0
+
+
+def test_different_longest_products_are_named_per_tso():
+    table = route_table(prices={GASTRANS: {"Year": 5000.0}, BULGARTRANSGAZ: {"Year": 5000.0}},
+                        valid_from="2026-10-01", valid_to=None)
+    result = calculate_route(table, "BG", "HU", date(2026, 10, 1), date(2027, 9, 30), "400")
+    assert leg(result, FGSZ).longest_product == "yearly"
+    assert leg(result, GASTRANS).longest_product == leg(result, BULGARTRANSGAZ).longest_product == QUARTERLY
+    assert {s.product for s in leg(result, FGSZ).comparison.segments} == {QUARTERLY}
+    assert result.comparison_label == "Next shorter products"
+    assert result.comparison_note == "FGSZ without yearly; Bulgartransgaz, Gastrans without quarterly"
+
+
+def test_monthly_is_compared_with_daily_only():
+    table = route_table(valid_from="2026-10-01", valid_to=None)
+    result = calculate_route(table, "BG", "HU", date(2026, 12, 1), date(2026, 12, 31), "400")
+    assert all(products(result, tso) == [MONTHLY] for tso in (FGSZ, GASTRANS, BULGARTRANSGAZ))
+    assert all({s.product for s in l.comparison.segments} == {DAILY} for l in result.legs)
+    assert result.comparison_label == "Without monthly products"
+
+
+def test_daily_only_has_no_comparison():
+    table = route_table(valid_from="2026-10-01", valid_to=None)
+    result = calculate_route(table, "BG", "HU", date(2026, 12, 1), date(2026, 12, 5), "400")
+    assert all(l.comparison is None for l in result.legs)
+    assert result.comparison_label is None and result.comparison_eur_per_mwh is None
+
+
+def test_bg_to_hu_on_the_real_tariffs():
+    table = load_tariffs(Path(__file__).resolve().parent.parent / "data" / "real" / "tariffs_real.xlsx").table
+    result = calculate_route(table, "BG", "HU", date(2026, 10, 1), date(2027, 3, 31), "400")
+    fmt = lambda v: money.format_decimal(v, 4)
+    assert [fmt(x) for l in result.legs for x in l.point_eur_per_mwh] == ["1.4431", "0.8494", "0.9684", "0.4348"]
+    assert [fmt(v) for v in (result.eur_per_mwh, result.comparison_eur_per_mwh,
+                             result.comparison_saving_eur_per_mwh)] == ["3.6957", "3.9913", "0.2956"]
+    assert result.comparison_label == "Without quarterly products"
