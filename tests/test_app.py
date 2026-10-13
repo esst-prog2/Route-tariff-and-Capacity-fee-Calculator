@@ -147,9 +147,12 @@ def test_tab1_details_list_tariff_used_per_point_and_product():
     assert [e.label for e in at.expander] == ["Details"]
     assert not at.expander[0].proto.expanded  # closed until opened
     details = frames(at)[-1]
-    assert list(details.columns) == ["TSO", "Point", "Direction", "Dates", "Product", "Tariff used"]
+    assert list(details.columns) == ["TSO", "Point", "Direction", "Dates", "Product", "Tariff used", "Tariff"]
     assert set(details["Point"]) == set(frames(at)[0]["Point"])
     assert all(text.startswith("from ") for text in details["Tariff used"])
+    units = {"FGSZ": " HUF per kWh/h", "Gastrans": " EUR per kWh/h", "Bulgartransgaz": " EUR per kWh/d"}
+    for tso, product, tariff in zip(details["TSO"], details["Product"], details["Tariff"]):
+        assert tariff.endswith(units[tso] + (" per day" if product == "daily" else ""))
 
 
 def test_tab1_same_country_is_not_possible():
