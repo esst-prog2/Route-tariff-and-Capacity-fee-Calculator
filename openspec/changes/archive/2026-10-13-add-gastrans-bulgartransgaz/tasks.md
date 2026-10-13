@@ -42,8 +42,8 @@
 ## 8. Wrap-up
 
 - [x] 8.1 Run the full test suite (`python -m pytest`) and verify it passes
-- [ ] 8.2 Run the app locally on the sample (`python -m streamlit run app.py`) and check all six routes and one point per TSO on tab 2 by eye
+- [x] 8.2 Run the app locally on the sample (`python -m streamlit run app.py`) and check all six routes and one point per TSO on tab 2 by eye
 
 ## 9. Real export check (user)
 
-- [ ] 9.1 The user runs the app locally against the private real export (`FGSZ_TARIFF_FILE`) and confirms the Gastrans and Bulgartransgaz points load with the expected operator codes, EICs, units and capacity types; the export is never committed or uploaded
+- [x] 9.1 The user runs the app locally against the real tariffs (`FGSZ_TARIFF_FILE`, now committed as `data/real/tariffs_real.xlsx`) and confirms the Gastrans and Bulgartransgaz points load with the expected operator codes, EICs, units and capacity types
