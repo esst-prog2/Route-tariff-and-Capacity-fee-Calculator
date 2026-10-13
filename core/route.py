@@ -15,7 +15,7 @@ from fractions import Fraction
 
 from . import periods, points
 from .money import parse_number
-from .optimizer import Plan, PriceUnavailable, optimize
+from .optimizer import DAILY, MONTHLY, PRODUCTS, QUARTERLY, YEARLY, Plan, PriceUnavailable, Segment, optimize
 from .points import Point
 from .tariffs import TSO_FORMATS, TariffRow, TariffTable
 
@@ -69,16 +69,53 @@ class TsoOracle:
         first, _ = periods.gas_year_period(gas_year)
         return self._sum(first, lambda row: row.year_price())
 
+    def sources(self, point: Point, first: date, last: date) -> str:
+        """The rows one point's prices come from on days first..last."""
+        sources: list[str] = []
+        for day in periods.iter_days(first, last):
+            text = self._row(point, day).source_text()
+            if text not in sources:
+                sources.append(text)
+        return ", ".join(sources)
+
     def tariff_used(self, first: date, last: date) -> str:
-        parts = []
-        for point in self._points:
-            sources: list[str] = []
-            for day in periods.iter_days(first, last):
-                text = self._row(point, day).source_text()
-                if text not in sources:
-                    sources.append(text)
-            parts.append(f"{point.direction.lower()} {', '.join(sources)}")
-        return "; ".join(parts)
+        return "; ".join(f"{point.direction.lower()} {self.sources(point, first, last)}" for point in self._points)
+
+
+def segment_price(oracle: TsoOracle, segment: Segment) -> Fraction:
+    """The oracle's price for the product a segment books (used to cost one
+    point of a TSO for the products chosen for the whole TSO)."""
+    first = segment.start
+    if segment.product == YEARLY:
+        return oracle.year_price(periods.gas_year_start_year(first))
+    if segment.product == QUARTERLY:
+        return oracle.quarter_price(first.year, periods.quarter_of_month(first.month))
+    if segment.product == MONTHLY:
+        return oracle.month_price(first.year, first.month)
+    return sum((oracle.day_price(d) for d in periods.iter_days(segment.start, segment.end)), Fraction(0))
+
+
+def point_tariff_used(table: TariffTable, point: Point, segment: Segment) -> str:
+    """The tariff rows behind one point's price for a booked product: the row
+    valid on the first day of a yearly, quarterly or monthly product, or the
+    rows of each daily day."""
+    last = segment.end if segment.product == DAILY else segment.start
+    return TsoOracle(table, [point]).sources(point, segment.start, last)
+
+
+def point_tariff(table: TariffTable, point: Point, segment: Segment) -> tuple[Fraction, ...]:
+    """One point's tariff for a booked product, in its own currency and unit:
+    the single cell of a yearly, quarterly or monthly product, or the distinct
+    day prices of a daily stretch (one value unless the rows change)."""
+    oracle = TsoOracle(table, [point])
+    if segment.product != DAILY:
+        return (segment_price(oracle, segment),)
+    prices: list[Fraction] = []
+    for day in periods.iter_days(segment.start, segment.end):
+        price = oracle.day_price(day)
+        if price not in prices:
+            prices.append(price)
+    return tuple(prices)
 
 
 @dataclass(frozen=True)
@@ -89,6 +126,8 @@ class TsoLeg:
     points: tuple[Point, ...]
     plan: Plan
     fx_rate: Fraction | None  # HUF per EUR; only used for a HUF leg
+    point_costs: tuple[Fraction, ...] = ()  # each point's own price for the chosen products, in `points` order
+    comparison: Plan | None = None  # cheapest plan without the plan's longest product; None when daily only
 
     @property
     def tso_name(self) -> str:
@@ -128,6 +167,19 @@ class TsoLeg:
     def all_daily_eur_per_mwh(self) -> Fraction | None:
         return self._to_eur(self.all_daily_per_mwh)
 
+    @property
+    def point_eur_per_mwh(self) -> tuple[Fraction | None, ...]:
+        return tuple(self._to_eur(self._per_mwh(cost)) for cost in self.point_costs)
+
+    @property
+    def longest_product(self) -> str:
+        return max((seg.product for seg in self.plan.segments), key=PRODUCTS.index)
+
+    @property
+    def comparison_eur_per_mwh(self) -> Fraction | None:
+        """The comparison plan's EUR/MWh, or the cheapest one when there is none."""
+        return self._to_eur(self._per_mwh(self.comparison.total)) if self.comparison else self.eur_per_mwh
+
 
 @dataclass(frozen=True)
 class RouteResult:
@@ -164,6 +216,46 @@ class RouteResult:
         if self.eur_per_mwh is None:
             return None
         return self.all_daily_eur_per_mwh - self.eur_per_mwh
+
+    @property
+    def has_comparison(self) -> bool:
+        return any(leg.comparison for leg in self.legs)
+
+    @property
+    def comparison_eur_per_mwh(self) -> Fraction | None:
+        """Sum over the TSOs of their next-shorter comparison (or cheapest) EUR/MWh."""
+        if not self.has_comparison:
+            return None
+        return self._sum(leg.comparison_eur_per_mwh for leg in self.legs)
+
+    @property
+    def comparison_saving_eur_per_mwh(self) -> Fraction | None:
+        if self.comparison_eur_per_mwh is None or self.eur_per_mwh is None:
+            return None
+        return self.comparison_eur_per_mwh - self.eur_per_mwh
+
+    def _compared(self) -> dict[str, list[str]]:
+        """Excluded product type -> the TSOs compared without it, longest type first."""
+        groups: dict[str, list[str]] = {}
+        for leg in self.legs:
+            if leg.comparison:
+                groups.setdefault(leg.longest_product, []).append(leg.tso_name)
+        return dict(sorted(groups.items(), key=lambda item: -PRODUCTS.index(item[0])))
+
+    @property
+    def comparison_label(self) -> str | None:
+        groups = self._compared()
+        if not groups:
+            return None
+        return f"Without {next(iter(groups))} products" if len(groups) == 1 else "Next shorter products"
+
+    @property
+    def comparison_note(self) -> str | None:
+        """Which TSO is compared without which product, when they differ."""
+        groups = self._compared()
+        if len(groups) < 2:
+            return None
+        return "; ".join(f"{', '.join(names)} without {product}" for product, names in groups.items())
 
 
 def parse_fx_rate(text) -> tuple[Fraction | None, str | None]:
@@ -215,8 +307,17 @@ def calculate_route(
     for tso, tso_points in groups:
         try:
             plan = optimize(start, end, TsoOracle(table, tso_points))
+            point_costs = tuple(
+                sum((segment_price(TsoOracle(table, [point]), seg) for seg in plan.segments), Fraction(0))
+                for point in tso_points
+            )
         except NoTariffError as error:
             return RouteError(error.message)
-        legs.append(TsoLeg(tso, tuple(tso_points), plan, fx_rate))
+        longest = max((seg.product for seg in plan.segments), key=PRODUCTS.index)
+        comparison = None
+        if longest != DAILY:
+            shorter = PRODUCTS[PRODUCTS.index(longest) - 1]
+            comparison = optimize(start, end, TsoOracle(table, tso_points), longest=shorter)
+        legs.append(TsoLeg(tso, tuple(tso_points), plan, fx_rate, point_costs, comparison))
 
     return RouteResult(begin, end_country, tuple(route), tuple(legs), fx_rate, fx_message)

@@ -18,6 +18,8 @@ DAILY = "daily"
 MONTHLY = "monthly"
 QUARTERLY = "quarterly"
 YEARLY = "yearly"
+# Shortest to longest; `optimize` can be limited to the products up to one of them.
+PRODUCTS = (DAILY, MONTHLY, QUARTERLY, YEARLY)
 
 
 class PriceOracle(Protocol):
@@ -78,7 +80,7 @@ class Plan:
         return self.all_daily_total - self.total
 
 
-def optimize(start: date, end: date, oracle: PriceOracle) -> Plan:
+def optimize(start: date, end: date, oracle: PriceOracle, longest: str = YEARLY) -> Plan:
     """Cheapest way to cover every day of [start, end] (inclusive). A yearly,
     monthly or quarterly product may also cover days outside the period
     (over-booking) when that is cheaper. Ties prefer the coarser product: gas
@@ -91,7 +93,10 @@ def optimize(start: date, end: date, oracle: PriceOracle) -> Plan:
     3. Each gas year (1 October - 30 September) touched costs min(yearly, the
        sum of its touched quarters as priced by 2).
     Each yearly, monthly or quarterly product uses the row valid on its first day; one
-    that starts before the period and has no price there is not an option."""
+    that starts before the period and has no price there is not an option.
+    Products longer than `longest` are not an option either (used for the
+    comparison with the next shorter products)."""
+    allowed = PRODUCTS[: PRODUCTS.index(longest) + 1]
     slices = periods.month_slices(start, end)
 
     month_choice: dict[tuple[int, int], tuple[str, Fraction]] = {}
@@ -99,7 +104,7 @@ def optimize(start: date, end: date, oracle: PriceOracle) -> Plan:
     for s in slices:
         daily_sum = sum((oracle.day_price(d) for d in periods.iter_days(s.first, s.last)), Fraction(0))
         all_daily_total += daily_sum
-        monthly = _optional_price(lambda: oracle.month_price(s.year, s.month))
+        monthly = _optional_price(lambda: oracle.month_price(s.year, s.month)) if MONTHLY in allowed else None
         month_choice[(s.year, s.month)] = (
             (MONTHLY, monthly) if monthly is not None and monthly <= daily_sum else (DAILY, daily_sum)
         )
@@ -109,7 +114,7 @@ def optimize(start: date, end: date, oracle: PriceOracle) -> Plan:
         quarter_months.setdefault((s.year, periods.quarter_of_month(s.month)), []).append((s.year, s.month))
     quarter_price: dict[tuple[int, int], Fraction] = {}
     for key, months in quarter_months.items():
-        price = _optional_price(lambda: oracle.quarter_price(*key))
+        price = _optional_price(lambda: oracle.quarter_price(*key)) if QUARTERLY in allowed else None
         if price is not None and price <= sum((month_choice[m][1] for m in months), Fraction(0)):
             quarter_price[key] = price
 
@@ -123,7 +128,7 @@ def optimize(start: date, end: date, oracle: PriceOracle) -> Plan:
         year_quarters.setdefault(periods.gas_year_start_year(periods.quarter_period(*key)[0]), []).append(key)
     year_price: dict[int, Fraction] = {}
     for gas_year, quarters in year_quarters.items():
-        price = _optional_price(lambda: oracle.year_price(gas_year))
+        price = _optional_price(lambda: oracle.year_price(gas_year)) if YEARLY in allowed else None
         if price is not None and price <= sum((quarter_cost(q) for q in quarters), Fraction(0)):
             year_price[gas_year] = price
 

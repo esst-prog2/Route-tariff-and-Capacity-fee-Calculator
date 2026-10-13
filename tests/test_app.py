@@ -66,26 +66,30 @@ def test_tab1_flags_interruptible_points_on_hu_to_bg():
     assert any("Interruptible" in w.value and "interrupt it" in w.value for w in at.warning)
 
 
-def test_tab1_shows_own_units_and_eur_only_once_a_rate_is_entered():
+def test_tab1_is_one_point_table_with_products_and_eur_per_mwh():
     at = start_app()
     assert at.text_input(key="route_fx").value == ""  # starts blank
     tables = frames(at)
-    assert len(tables) == 5  # points, three TSO segment tables, summary (no route total yet)
-    assert "EUR per kWh/d" in tables[1].columns and "EUR per kWh/h" in tables[2].columns
-    assert list(tables[3].columns) == ["Segment", "Product", "HUF per kWh/h", "Days outside period", "Tariff used"]
-    summary = tables[4]
-    assert summary["TSO"].tolist() == ["Bulgartransgaz", "Gastrans", "FGSZ"]
-    assert summary["EUR/MWh"].tolist()[2] == "" and summary["EUR/MWh"].tolist()[0] != ""
-    assert summary["Per MWh"].tolist()[2].endswith("HUF/MWh")
+    assert len(tables) == 2  # points and details; no per-TSO tables, no summary, no route total without a rate
+    point_table = tables[0]
+    assert list(point_table.columns) == [
+        "#", "TSO", "Point", "EIC", "Direction", "Capacity type", "Products", "EUR/MWh",
+    ]
+    assert point_table["Products"][1] == point_table["Products"][2]  # the two Gastrans points share products
+    eur = point_table["EUR/MWh"].tolist()
+    assert eur[3] == "" and all(value != "" for value in eur[:3])  # FGSZ waits for the rate
     assert any("Enter today's HUF per EUR rate" in info.value for info in at.info)
+    assert not any(isinstance(c, str) and ("per kWh" in c or "HUF" in c) for t in tables for c in t.columns)
 
     at.text_input(key="route_fx").set_value("400").run()
     assert not at.exception
-    tables = frames(at)
-    route_total = tables[5]
-    assert route_total[""].tolist() == ["Cheapest combination", "All daily", "Saving"]
-    for value in [*tables[4]["EUR/MWh"], *route_total["EUR/MWh"]]:
+    point_table, route_total, _ = frames(at)
+    assert route_total[""].tolist()[0] == "Cheapest combination"
+    assert "All daily" not in route_total[""].tolist()
+    for value in [*point_table["EUR/MWh"], *route_total["EUR/MWh"]]:
         assert len(value.split(".")[1]) == 4
+    assert sum(Decimal(v) for v in point_table["EUR/MWh"]) == pytest.approx(
+        Decimal(route_total["EUR/MWh"][0]), abs=Decimal("0.0003"))  # cells are rounded separately
     assert any("at 1 EUR = 400 HUF" in caption.value for caption in at.caption)
 
 
@@ -94,14 +98,16 @@ def test_tab1_route_without_hu_has_no_fx_box():
     at.selectbox(key="route_end_country").select("RS").run()
     assert not at.exception
     assert "route_fx" not in [t.key for t in at.text_input]
-    assert frames(at)[-1][""].tolist() == ["Cheapest combination", "All daily", "Saving"]
+    point_table, route_total, _ = frames(at)
+    assert "" not in point_table["EUR/MWh"].tolist()
+    assert route_total[""].tolist()[0] == "Cheapest combination"
 
 
 def test_tab1_invalid_rate_shows_a_message_and_no_route_total():
     at = start_app()
     at.text_input(key="route_fx").set_value("abc").run()
     assert any("positive number" in warning.value for warning in at.warning)
-    assert len(frames(at)) == 5
+    assert len(frames(at)) == 2 and frames(at)[0]["EUR/MWh"].tolist()[3] == ""
 
 
 def test_tab1_shows_over_booking_for_q4_minus_its_edge_days():
@@ -110,21 +116,43 @@ def test_tab1_shows_over_booking_for_q4_minus_its_edge_days():
     at.date_input(key="route_start").set_value(date(2026, 10, 2))
     at.date_input(key="route_end").set_value(date(2026, 12, 30)).run()
     assert not at.exception
-    fgsz_segments = frames(at)[3]
-    assert fgsz_segments["Product"].tolist() == ["quarterly"]
-    assert fgsz_segments["Segment"].tolist() == ["2026-10-01 to 2026-12-31"]
-    assert fgsz_segments["Days outside period"].tolist() == [2]
+    assert frames(at)[0]["Products"].tolist() == ["Q4 2026 (+2 days)"] * 4
     assert any("Over-booking" in info.value and "FGSZ 2 day(s)" in info.value for info in at.info)
 
 
-def test_tab1_saving_equals_all_daily_minus_cheapest():
+def test_tab1_saving_is_against_the_next_shorter_products():
     at = start_app()
     at.text_input(key="route_fx").set_value("400").run()
-    summary, route_total = frames(at)[4:6]
-    for cheapest, all_daily, saving in zip(summary["Cheapest"], summary["All daily"], summary["Saving"]):
-        assert float(saving) == pytest.approx(float(all_daily) - float(cheapest), abs=1e-3)
-    cheapest, all_daily, saving = (float(v) for v in route_total["EUR/MWh"])
-    assert saving == pytest.approx(all_daily - cheapest, abs=1e-3) and saving >= 0
+    route_total = frames(at)[1]
+    labels = route_total[""].tolist()
+    assert labels[0] == "Cheapest combination" and labels[2] == "Saving"
+    assert labels[1] in ("Without yearly products", "Without quarterly products", "Without monthly products",
+                         "Next shorter products")
+    cheapest, comparison, saving = (Decimal(v) for v in route_total["EUR/MWh"])
+    assert saving == pytest.approx(comparison - cheapest, abs=Decimal("0.0002")) and saving >= 0
+
+
+def test_tab1_daily_only_has_no_saving_line():
+    at = start_app()
+    at.text_input(key="route_fx").set_value("400")
+    at.date_input(key="route_start").set_value(date(2026, 12, 1))
+    at.date_input(key="route_end").set_value(date(2026, 12, 1)).run()
+    assert not at.exception
+    assert all(text.startswith("daily ") for text in frames(at)[0]["Products"])
+    assert frames(at)[1][""].tolist() == ["Cheapest combination"]
+
+
+def test_tab1_details_list_tariff_used_per_point_and_product():
+    at = start_app()
+    assert [e.label for e in at.expander] == ["Details"]
+    assert not at.expander[0].proto.expanded  # closed until opened
+    details = frames(at)[-1]
+    assert list(details.columns) == ["TSO", "Point", "Direction", "Dates", "Product", "Tariff used", "Tariff"]
+    assert set(details["Point"]) == set(frames(at)[0]["Point"])
+    assert all(text.startswith("from ") for text in details["Tariff used"])
+    units = {"FGSZ": " HUF per kWh/h", "Gastrans": " EUR per kWh/h", "Bulgartransgaz": " EUR per kWh/d"}
+    for tso, product, tariff in zip(details["TSO"], details["Product"], details["Tariff"]):
+        assert tariff.endswith(units[tso] + (" per day" if product == "daily" else ""))
 
 
 def test_tab1_same_country_is_not_possible():

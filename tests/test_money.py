@@ -56,3 +56,12 @@ def test_minor_units_per_currency():
     assert format_amount(1_565_115, "HUF") == "1,565,115"
     assert format_amount(1_211_085, "EUR") == "12,110.85"
     assert format_amount(5, "EUR") == "0.05"
+
+
+@pytest.mark.parametrize("value,text", [
+    (money.to_fraction(375.627714), "375.627714"), (money.to_fraction(0.1211087), "0.1211087"),
+    (money.to_fraction(1.88), "1.88"), (money.to_fraction(8.65471846), "8.65471846"),
+    (Fraction(1149), "1149"), (Fraction(0), "0"), (Fraction("1.50"), "1.5"),
+])
+def test_format_exact_keeps_every_digit_and_drops_trailing_zeros(value, text):
+    assert money.format_exact(value) == text
