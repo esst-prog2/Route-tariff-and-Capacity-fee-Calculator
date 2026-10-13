@@ -26,4 +26,4 @@
 
 - [x] 5.1 Rewrite the tab 1 part of README section 1 for the new layout and verify every figure it quotes against the app
 - [x] 5.2 Record any implementation decisions taken while applying the change in `PLANNING_LOG.md`
-- [ ] 5.3 Run the app on the real tariffs and check BG to HU 2026-10-01 to 2027-03-31 (1.4431 / 0.8494 / 0.9684 / 0.4348; 3.6957, 3.9913, 0.2956 at 400 HUF/EUR) and one over-booked and one mixed-product period by eye (user)
+- [x] 5.3 Run the app on the real tariffs and check BG to HU 2026-10-01 to 2027-03-31 (1.4431 / 0.8494 / 0.9684 / 0.4348; 3.6957, 3.9913, 0.2956 at 400 HUF/EUR) and one over-booked and one mixed-product period by eye (user)
