@@ -1,7 +1,9 @@
-# Private tariff exports must never be committed; only the synthetic sample is.
+# The raw work export stays local (it names colleagues); the synthetic sample and the
+# cleaned real tariffs in data/real/ are committed.
 data/private/
 *.xlsx
 !data/sample/*.xlsx
+!data/real/*.xlsx
 
 __pycache__/
 .pytest_cache/
