@@ -12,6 +12,7 @@ import streamlit as st
 
 from core import fee, money, periods, points
 from core.labels import products_text
+from core.points import Bundle
 from core.route import RouteError, calculate_route, point_tariff, point_tariff_used
 from core.tariffs import INTERRUPTIBLE, LoadResult, load_tariffs, resolve_tariff_path
 
@@ -154,18 +155,81 @@ def route_tab(table) -> None:
 
 # --- tab 2 -----------------------------------------------------------------------------------
 
-def fee_tab(table) -> None:
-    today = date.today()
-    tso = st.selectbox("TSO", points.TSOS, format_func=points.tso_name, key="fee_tso")
-    tso_points = points.points_of(tso)
+BUNDLED, SINGLE_SIDE, LNG_ENTRY = "Bundled", "Single side", "LNG entry"
+DEFAULT_BUNDLE = "Mosonmagyaróvár AT>HU (Gas Connect Austria + FGSZ)"
+
+
+def choose_booking(catalog: points.Catalog):
+    """The booking-type radio and the matching point dropdown(s); each type and
+    TSO has its own widget key, so a switch never keeps a point of the wrong kind."""
+    booking = st.radio("Booking type", (BUNDLED, SINGLE_SIDE, LNG_ENTRY), horizontal=True, key="fee_booking")
+    if booking == BUNDLED:
+        labels = [b.label() for b in catalog.bundles]
+        default = labels.index(DEFAULT_BUNDLE) if DEFAULT_BUNDLE in labels else 0
+        options = catalog.bundles
+        return options and st.selectbox("Bundled point", options, index=default, format_func=Bundle.label,
+                                        key="fee_bundle")
+    if booking == LNG_ENTRY:
+        options = catalog.lng
+        return options and st.selectbox("LNG terminal", options, format_func=points.Point.lng_label, key="fee_lng")
+    tsos = catalog.tsos()
+    if not tsos:
+        return None
+    tso = st.selectbox("TSO", tsos, index=tsos.index(points.FGSZ) if points.FGSZ in tsos else 0,
+                       format_func=points.tso_name, key="fee_tso")
+    tso_points = catalog.singles_of(tso)
     default_point = next((i for i, p in enumerate(tso_points) if p.name == "Kiskundorozsma 2"), 0)
-    point = st.selectbox("Network point", tso_points, index=default_point,
-                         format_func=lambda p: p.fee_label(table.capacity_type(*p.key)), key=f"fee_point_{tso}")
+    return st.selectbox("Network point", tso_points, index=default_point,
+                        format_func=lambda p: p.fee_label(catalog.capacity_type(p)), key=f"fee_point_{tso}")
+
+
+def show_side(result: fee.FeeResult, invoice_title: str) -> None:
+    """Capacity, price, total and monthly invoice of one point, in its own currency."""
+    currency = result.currency
+    left, middle, right = st.columns(3)
+    left.metric(f"Capacity ({result.unit})", money.format_decimal(result.capacity, 2))
+    # Every distinct tariff the product is priced from, once each, in date order.
+    prices = " / ".join(dec4(price) for price in dict.fromkeys(result.part_prices)) or dec4(result.price)
+    middle.metric(f"Price ({result.price_column}, {currency} per {result.unit})", prices)
+    right.metric(f"Total cost ({currency})", money.format_amount(result.total, currency))
+    rounding = "whole forints" if money.CURRENCY_DECIMALS[currency] == 0 else "cents"
+    st.caption(f"Tariff used: {result.tariff_used}. All amounts are in {currency}; the total is rounded to {rounding}.")
+    if result.capacity_type == INTERRUPTIBLE:
+        st.warning("This point has no Firm tariff, so Interruptible capacity is priced; the TSO can interrupt it.")
+
+    lines = [(f"{line.year}-{line.month:02d}", line.days, money.format_amount(line.amount, currency))
+             for line in result.invoice]
+    lines.append(("Total", sum(line.days for line in result.invoice), money.format_amount(result.total, currency)))
+    st.markdown(f"**{invoice_title}**")
+    st.dataframe(pd.DataFrame(lines, columns=["Month", "Days", f"Amount ({currency})"]), hide_index=True, width="stretch")
+
+
+def show_bundle_total(result: fee.BundleFeeResult) -> None:
+    """Rate boxes for the sides not in EUR, then the bundle's EUR total or what is missing."""
+    rate_texts = {}
+    for currency in result.rate_currencies:
+        rate_texts[currency] = st.text_input(f"{currency} per 1 EUR", value="", placeholder="e.g. 395.5",
+                                             key=f"fee_rate_{currency}")
+    total = fee.bundle_eur_total(result, rate_texts)
+    if isinstance(total, fee.RatesNeeded):
+        st.info(total.message)
+        return
+    st.metric("Bundle total (EUR)", money.format_amount(total.amount, "EUR"))
+    rates = "; ".join(f"at 1 EUR = {plain_rate(rate)} {currency}" for currency, rate in total.rates)
+    st.caption("Sum of both sides' totals" + (f", converted {rates}." if rates else ", both in EUR."))
+
+
+def fee_tab(table, catalog: points.Catalog) -> None:
+    today = date.today()
+    booked = choose_booking(catalog)
+    if not booked:
+        st.info("The tariff file has no points of this booking type.")
+        return
     instrument = st.selectbox("Product instrument", fee.INSTRUMENTS, index=fee.INSTRUMENTS.index(fee.QUARTER),
                               format_func=fee.INSTRUMENT_LABELS.get, key="fee_instrument")
 
-    gas_years = fee.gas_year_choices(table, point, today)
-    calendar_years = fee.calendar_year_choices(table, point, today)
+    gas_years = fee.gas_year_choices(table, booked, today)
+    calendar_years = fee.calendar_year_choices(table, booked, today)
     year_default = calendar_years.index(2026) if 2026 in calendar_years else 0
 
     selection: dict = {}
@@ -193,28 +257,27 @@ def fee_tab(table) -> None:
     if isinstance(period, fee.FeeError):
         st.warning(period.message)
         return
-    result = fee.calculate_fee(table, point, instrument, period[0], period[1], capacity)
+    product = f"{fee.INSTRUMENT_LABELS[instrument].lower()} {dates_text(*period)}"
+    if isinstance(booked, Bundle):
+        result = fee.calculate_bundle_fee(table, booked, instrument, period[0], period[1], capacity)
+        if isinstance(result, fee.FeeError):
+            st.warning(result.message)
+            return
+        st.subheader(f"{booked.label()}: {product}")
+        for side in result.sides:
+            point = side.point
+            st.markdown(f"#### {point.tso_name} {point.direction.lower()} {point.cleaned_name}")
+            show_side(side, f"Monthly invoice ({point.tso_name})")
+        show_bundle_total(result)
+        return
+
+    result = fee.calculate_fee(table, booked, instrument, period[0], period[1], capacity)
     if isinstance(result, fee.FeeError):
         st.warning(result.message)
         return
-
-    currency = result.currency
-    st.subheader(f"{point.tso_name} {point.fee_label()}: "
-                 f"{fee.INSTRUMENT_LABELS[instrument].lower()} {dates_text(result.start, result.end)}")
-    left, middle, right = st.columns(3)
-    left.metric(f"Capacity ({result.unit})", money.format_decimal(result.capacity, 2))
-    middle.metric(f"Price ({result.price_column}, {currency} per {result.unit})", dec4(result.price))
-    right.metric(f"Total cost ({currency})", money.format_amount(result.total, currency))
-    rounding = "whole forints" if money.CURRENCY_DECIMALS[currency] == 0 else "cents"
-    st.caption(f"Tariff used: {result.tariff_used}. All amounts are in {currency}; the total is rounded to {rounding}.")
-    if result.capacity_type == INTERRUPTIBLE:
-        st.warning("This point has no Firm tariff, so Interruptible capacity is priced; the TSO can interrupt it.")
-
-    lines = [(f"{line.year}-{line.month:02d}", line.days, money.format_amount(line.amount, currency))
-             for line in result.invoice]
-    lines.append(("Total", sum(line.days for line in result.invoice), money.format_amount(result.total, currency)))
-    st.markdown("**Monthly invoice**")
-    st.dataframe(pd.DataFrame(lines, columns=["Month", "Days", f"Amount ({currency})"]), hide_index=True, width="stretch")
+    label = booked.lng_label() if booked.is_lng else f"{booked.tso_name} {booked.fee_label()}"
+    st.subheader(f"{label}: {product}")
+    show_side(result, "Monthly invoice")
 
 
 # --- page ----------------------------------------------------------------------------------------
@@ -237,4 +300,4 @@ route, capacity_fee = st.tabs(["Route Tariff Calculator", "Capacity Fee Calculat
 with route:
     route_tab(load_result.table)
 with capacity_fee:
-    fee_tab(load_result.table)
+    fee_tab(load_result.table, points.build_catalog(load_result.table))
