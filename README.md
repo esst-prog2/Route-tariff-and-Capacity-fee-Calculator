@@ -42,10 +42,10 @@ The app works with three TSOs along the Hungary - Serbia - Bulgaria corridor: FG
 * The structure of the source Excel file might be inconsistent (e.g., unexpected empty cells,) which could break the parser.
 * Handling leap years and exact timezone boundaries in the booking period to parsing might prove unexpectedly complex.
 
-The database is not public so a sythetic sample with the same columns will be used, with the real export hidden.
+The project now uses the real tariff data, committed as `data/real/tariffs_real.xlsx`. The tariffs are public on the TSOs' websites, and my employer allowed me to use them. The file is the work export without its author and comment columns. The synthetic sample in `data/sample/` is kept, because the demo figures above and the earlier tests were built on it.
 
 ## Running the MVP
-The app is hosted on Streamlit Community Cloud: **https://route-tariff-and-capacity-fee-calculator.streamlit.app**. It serves only the synthetic sample; never upload the real export there. If nobody has opened it for a while it shows a "gone to sleep" page; click the button to wake it (about a minute).
+The app is hosted on Streamlit Community Cloud: **https://route-tariff-and-capacity-fee-calculator.streamlit.app**. It opens the synthetic sample by default; the real tariffs can be uploaded in the sidebar. If nobody has opened it for a while it shows a "gone to sleep" page; click the button to wake it (about a minute).
 
 To run it locally instead:
 ```
@@ -53,4 +53,4 @@ pip install -r requirements.txt
 python -m streamlit run app.py     # uses the synthetic sample in data/sample/
 python -m pytest                   # unit, app and acceptance tests
 ```
-To use the real export, keep it in `data/private/` (git-ignored, never committed) and point the app at it with the `FGSZ_TARIFF_FILE` environment variable, or upload it in the sidebar for one session. The parser reports missing columns and unusable rows in plain language instead of crashing.
+To use the real tariffs, point the app at `data/real/tariffs_real.xlsx` with the `FGSZ_TARIFF_FILE` environment variable (PowerShell: `$env:FGSZ_TARIFF_FILE = "data/real/tariffs_real.xlsx"`, then `python -m streamlit run app.py`), or upload it in the sidebar for one session. The raw work export, which still has colleagues' names in it, stays in `data/private/` (git-ignored, never committed). The parser reports missing columns and unusable rows in plain language instead of crashing.
