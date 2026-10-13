@@ -48,8 +48,8 @@ def round_whole(amount: Fraction) -> int:
     return sign * math.floor(abs(amount) + Fraction(1, 2))
 
 
-def split_by_weights(total: int, weights: Sequence[int]) -> list[int]:
-    """Split a whole amount in proportion to `weights`.
+def split_by_weights(total: int, weights: Sequence[int | Fraction]) -> list[int]:
+    """Split a whole amount in proportion to `weights` (whole or exact numbers).
 
     Each share is rounded down, then the forints left over go one each to
     the shares with the largest fractional parts (earlier share wins a tie),
@@ -86,12 +86,12 @@ def format_whole(amount: int) -> str:
     return f"{amount:,}"
 
 
-# Amounts are rounded and split in the currency's smallest shown unit: whole forints, euro cents.
-CURRENCY_DECIMALS = {"HUF": 0, "EUR": 2}
+# Amounts are rounded and split in the currency's smallest shown unit: whole forints, else cents.
+CURRENCY_DECIMALS = {"HUF": 0, "EUR": 2, "RON": 2, "CZK": 2, "PLN": 2}
 
 
 def round_minor(amount: Fraction, currency: str) -> int:
-    """`amount` in minor units (forints, cents), rounded half away from zero."""
+    """`amount` in minor units (forints, cents, bani, haléře, groszy), rounded half away from zero."""
     return round_whole(amount * 10 ** CURRENCY_DECIMALS[currency])
 
 

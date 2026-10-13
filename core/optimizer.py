@@ -41,7 +41,7 @@ class PriceOracle(Protocol):
 
 
 class PriceUnavailable(Exception):
-    """Raised by an oracle when no tariff applies on a product's first day."""
+    """Raised by an oracle when no tariff applies on a day of a product."""
 
 
 @dataclass(frozen=True)
@@ -92,8 +92,9 @@ def optimize(start: date, end: date, oracle: PriceOracle, longest: str = YEARLY)
        touched months as priced by 1).
     3. Each gas year (1 October - 30 September) touched costs min(yearly, the
        sum of its touched quarters as priced by 2).
-    Each yearly, monthly or quarterly product uses the row valid on its first day; one
-    that starts before the period and has no price there is not an option.
+    A yearly, monthly or quarterly product crossing a tariff change is priced
+    part by part by the oracle; one that starts before the period and has no
+    price on some of its days is not an option.
     Products longer than `longest` are not an option either (used for the
     comparison with the next shorter products)."""
     allowed = PRODUCTS[: PRODUCTS.index(longest) + 1]
@@ -141,7 +142,7 @@ def optimize(start: date, end: date, oracle: PriceOracle, longest: str = YEARLY)
             if gas_year not in emitted_years:
                 emitted_years.add(gas_year)
                 first, last = periods.gas_year_period(gas_year)
-                segments.append(Segment(first, last, YEARLY, year_price[gas_year], oracle.tariff_used(first, first)))
+                segments.append(Segment(first, last, YEARLY, year_price[gas_year], oracle.tariff_used(first, last)))
             continue
         quarter_key = (s.year, periods.quarter_of_month(s.month))
         if quarter_key in quarter_price:
@@ -149,13 +150,13 @@ def optimize(start: date, end: date, oracle: PriceOracle, longest: str = YEARLY)
                 emitted_quarters.add(quarter_key)
                 first, last = periods.quarter_period(*quarter_key)
                 segments.append(
-                    Segment(first, last, QUARTERLY, quarter_price[quarter_key], oracle.tariff_used(first, first))
+                    Segment(first, last, QUARTERLY, quarter_price[quarter_key], oracle.tariff_used(first, last))
                 )
             continue
         product, price = month_choice[(s.year, s.month)]
         if product == MONTHLY:
             first, last = periods.month_first(s.year, s.month), periods.month_last(s.year, s.month)
-            segments.append(Segment(first, last, MONTHLY, price, oracle.tariff_used(first, first)))
+            segments.append(Segment(first, last, MONTHLY, price, oracle.tariff_used(first, last)))
         else:
             segments.append(Segment(s.first, s.last, DAILY, price, oracle.tariff_used(s.first, s.last)))
 
@@ -164,7 +165,7 @@ def optimize(start: date, end: date, oracle: PriceOracle, longest: str = YEARLY)
 
 
 def _optional_price(get_price) -> Fraction | None:
-    """The price, or None when no tariff applies on the product's first day."""
+    """The price, or None when no tariff applies on a day of the product."""
     try:
         return get_price()
     except PriceUnavailable:

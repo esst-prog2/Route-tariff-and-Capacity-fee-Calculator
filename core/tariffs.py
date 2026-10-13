@@ -2,7 +2,7 @@
 
 The export is wide: one row per point, direction, capacity type and validity
 window, with one price column per product period. Loading narrows it to the
-Entry/Exit rows of the three supported TSOs (Firm, or Interruptible where a
+Entry/Exit rows of the supported TSOs (Firm, or Interruptible where a
 point has no Firm row) and exposes them as `TariffRow`s that are looked up by
 (TSO, EIC, direction, date)."""
 
@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from fractions import Fraction
 from pathlib import Path
-from typing import Mapping
+from typing import Callable, Mapping
 
 import pandas as pd
 
@@ -24,14 +24,35 @@ SHEET_NAME = "Capacity_fee"
 FIRM = "Firm"
 INTERRUPTIBLE = "Interruptible"
 SCOPE_DIRECTIONS = ("Entry", "Exit")
-# Each TSO's rows must be in its own currency and capacity unit; nothing is converted.
-TSO_FORMATS: Mapping[str, tuple[str, str]] = {
-    "FGSZ": ("HUF", "kWh/h"),
-    "Gastran": ("EUR", "kWh/h"),
-    "BGTRGAZ": ("EUR", "kWh/d"),
+# The TSOs in scope, by their `System operator` code: display name, and the currency and
+# capacity unit their rows must be in (nothing is converted). Any other operator is ignored.
+TSOS: Mapping[str, tuple[str, str, str]] = {
+    "AMBERGR": ("Amber Grid", "EUR", "kWh/h"),
+    "BGTRGAZ": ("Bulgartransgaz", "EUR", "kWh/d"),
+    "DESFA": ("DESFA", "EUR", "kWh/h"),
+    "EUSTR": ("Eustream", "EUR", "kWh/h"),
+    "FGSZ": ("FGSZ", "HUF", "kWh/h"),
+    "GASCADE": ("GASCADE", "EUR", "kWh/h"),
+    "GAZSYS": ("GAZ-SYSTEM", "PLN", "kWh/h"),
+    "GCA": ("Gas Connect Austria", "EUR", "kWh/h"),
+    "GTS": ("Gasunie Transport Services", "EUR", "kWh/h"),
+    "Gastran": ("Gastrans", "EUR", "kWh/h"),
+    "Gasunie": ("Gasunie Deutschland", "EUR", "kWh/h"),
+    "ICGB": ("ICGB", "EUR", "kWh/d"),
+    "NET4GAS": ("NET4GAS", "CZK", "kWh/h"),
+    "OGE": ("Open Grid Europe", "EUR", "kWh/h"),
+    "Plinovo": ("Plinovodi", "EUR", "kWh/h"),
+    "TAG": ("Trans Austria Gasleitung", "EUR", "kWh/h"),
+    "TAP": ("Trans Adriatic Pipeline", "EUR", "kWh/d"),
+    "TRANSGA": ("Transgaz", "RON", "kWh/h"),
+    "UKRTRAG": ("Gas TSO of Ukraine", "EUR", "kWh/d"),
+    "plinacr": ("Plinacro", "EUR", "kWh/d"),
+    "snam": ("Snam Rete Gas", "EUR", "kWh/h"),
 }
-# Rows left out on purpose, without a warning: Bulgartransgaz's earlier BGN tariffs.
-SKIPPED_CURRENCIES: Mapping[str, tuple[str, ...]] = {"BGTRGAZ": ("BGN",)}
+TSO_NAMES: Mapping[str, str] = {code: name for code, (name, _, _) in TSOS.items()}
+TSO_FORMATS: Mapping[str, tuple[str, str]] = {code: (currency, unit) for code, (_, currency, unit) in TSOS.items()}
+# Rows left out on purpose, without a warning: the pre-euro BGN and HRK tariffs.
+SKIPPED_CURRENCIES: Mapping[str, tuple[str, ...]] = {"BGTRGAZ": ("BGN",), "plinacr": ("HRK",)}
 
 IDENTITY_COLUMNS = [
     "EIC", "Network point", "System operator", "Direction", "Currency",
@@ -40,7 +61,9 @@ IDENTITY_COLUMNS = [
 REQUIRED_COLUMNS = [*IDENTITY_COLUMNS, *periods.PRICE_COLUMNS]
 
 PATH_ENV_VAR = "FGSZ_TARIFF_FILE"
-DEFAULT_SAMPLE_PATH = Path(__file__).resolve().parent.parent / "data" / "sample" / "tariffs_sample.xlsx"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DEFAULT_PATH = DATA_DIR / "real" / "tariffs_real.xlsx"
+DEFAULT_SAMPLE_PATH = DATA_DIR / "sample" / "tariffs_sample.xlsx"  # synthetic; the tests' data
 
 
 @dataclass(frozen=True)
@@ -56,6 +79,7 @@ class TariffRow:
     currency: str = "HUF"
     unit: str = "kWh/h"
     capacity_type: str = FIRM
+    network_point: str = field(default="", compare=False)  # the source `Network point` text
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -85,6 +109,27 @@ class TariffRow:
         return text + " (open-ended)" if self.open_ended else text
 
 
+class NoTariffRow(LookupError):
+    """No tariff row applies to a point on `day`."""
+
+    def __init__(self, day: date):
+        super().__init__(day.isoformat())
+        self.day = day
+
+
+@dataclass(frozen=True)
+class ProductPart:
+    """Days first..last of a product period, all priced from one row."""
+
+    first: date
+    last: date
+    row: TariffRow
+
+    @property
+    def days(self) -> int:
+        return periods.days_in_period(self.first, self.last)
+
+
 class TariffTable:
     """Tariff rows grouped by point: (TSO, EIC, direction)."""
 
@@ -103,6 +148,34 @@ class TariffTable:
                 return row
         return None
 
+    def product_parts(self, operator: str, eic: str, direction: str, first: date, last: date) -> list[ProductPart]:
+        """Days first..last split where the applicable row changes. Raises
+        NoTariffRow for the first day no row applies to."""
+        rows = self._rows.get((operator, eic, direction), [])
+        changes = {r.valid_from for r in rows} | {r.valid_to + timedelta(days=1) for r in rows if r.valid_to}
+        starts = [first, *sorted(day for day in changes if first < day <= last)]
+        parts: list[ProductPart] = []
+        for i, start in enumerate(starts):
+            end = starts[i + 1] - timedelta(days=1) if i + 1 < len(starts) else last
+            row = self.find_row(operator, eic, direction, start)
+            if row is None:
+                raise NoTariffRow(start)
+            if parts and parts[-1].row is row:
+                parts[-1] = ProductPart(parts[-1].first, end, row)
+            else:
+                parts.append(ProductPart(start, end, row))
+        return parts
+
+    def product_price(
+        self, operator: str, eic: str, direction: str, first: date, last: date, cell: Callable[[TariffRow], Fraction],
+    ) -> tuple[Fraction, list[ProductPart]]:
+        """The price of the product covering first..last: each part's `cell`
+        weighted by its share of the product's days (the cell itself when one
+        row covers the whole period)."""
+        parts = self.product_parts(operator, eic, direction, first, last)
+        days = periods.days_in_period(first, last)
+        return sum((cell(part.row) * part.days / days for part in parts), Fraction(0)), parts
+
     def earliest_valid_from(self, operator: str, eic: str, direction: str) -> date | None:
         rows = self._rows.get((operator, eic, direction))
         return rows[0].valid_from if rows else None
@@ -114,6 +187,11 @@ class TariffTable:
 
     def keys(self) -> list[tuple[str, str, str]]:
         return list(self._rows)
+
+    def network_point(self, operator: str, eic: str, direction: str) -> str:
+        """The source `Network point` text of the point's latest row."""
+        rows = self._rows.get((operator, eic, direction))
+        return rows[-1].network_point if rows else ""
 
 
 @dataclass
@@ -128,10 +206,10 @@ class LoadResult:
 
 
 def resolve_tariff_path(environ: Mapping[str, str] | None = None) -> Path:
-    """Configured tariff file: the environment variable, else the sample."""
+    """Configured tariff file: the environment variable, else the real tariffs."""
     environ = os.environ if environ is None else environ
     configured = environ.get(PATH_ENV_VAR, "").strip()
-    return Path(configured) if configured else DEFAULT_SAMPLE_PATH
+    return Path(configured) if configured else DEFAULT_PATH
 
 
 def load_tariffs(source) -> LoadResult:
@@ -158,7 +236,7 @@ def parse_frame(frame: pd.DataFrame) -> LoadResult:
 
     in_scope = _scope(frame)
     if in_scope.empty:
-        return LoadResult(None, ["The tariff file has no FGSZ, Gastrans or Bulgartransgaz Entry/Exit rows."])
+        return LoadResult(None, ["The tariff file has no Entry/Exit rows of a supported TSO."])
 
     rows: list[TariffRow] = []
     warnings: list[str] = []
@@ -237,6 +315,6 @@ def _parse_record(record) -> tuple[TariffRow | None, list[str]]:
         return None, problems
     row = TariffRow(
         operator, str(eic).strip(), str(record["Direction"]), valid_from.date(), valid_to, prices,
-        currency, unit, str(record["Capacity_type"]),
+        currency, unit, str(record["Capacity_type"]), str(record["Network point"]).strip(),
     )
     return row, []

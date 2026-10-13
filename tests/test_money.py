@@ -58,6 +58,15 @@ def test_minor_units_per_currency():
     assert format_amount(5, "EUR") == "0.05"
 
 
+@pytest.mark.parametrize("currency", ["RON", "CZK", "PLN"])
+def test_ron_czk_and_pln_round_to_cents(currency):
+    from core.money import format_amount, round_minor
+
+    assert round_minor(Fraction("23784.576"), currency) == 2_378_458
+    assert round_minor(Fraction("0.005"), currency) == 1
+    assert format_amount(2_378_458, currency) == "23,784.58"
+
+
 @pytest.mark.parametrize("value,text", [
     (money.to_fraction(375.627714), "375.627714"), (money.to_fraction(0.1211087), "0.1211087"),
     (money.to_fraction(1.88), "1.88"), (money.to_fraction(8.65471846), "8.65471846"),
