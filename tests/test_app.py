@@ -25,12 +25,21 @@ def frames(at):
     return [element.value for element in at.dataframe]
 
 
+def start_single_side() -> AppTest:
+    """The app with tab 2 switched to the Single side booking type."""
+    at = start_app()
+    at.radio(key="fee_booking").set_value("Single side").run()
+    assert not at.exception, [e.value for e in at.exception]
+    return at
+
+
 # --- shell -----------------------------------------------------------------------------------
 
 def test_both_tabs_render_with_the_sample_loaded():
     at = start_app()
     assert [tab.label for tab in at.tabs] == ["Route Tariff Calculator", "Capacity Fee Calculator"]
-    assert at.selectbox(key="fee_tso").options == ["FGSZ", "Gastrans", "Bulgartransgaz"]
+    assert at.radio(key="fee_booking").options == ["Bundled", "Single side", "LNG entry"]
+    assert at.radio(key="fee_booking").value == "Bundled"
     assert "tariffs_sample.xlsx" in at.sidebar.caption[0].value
 
 
@@ -183,16 +192,17 @@ def test_tab1_period_before_the_bulgartransgaz_eur_rows_says_no_tariff():
 # --- tab 2 ----------------------------------------------------------------------------------------
 
 def test_tab2_offers_the_selected_tsos_points_and_four_instruments():
-    at = start_app()
+    at = start_single_side()
     labels = at.selectbox(key="fee_point_FGSZ").options
-    assert len(labels) == 13 and len(set(labels)) == 13
+    assert len(labels) == 14 and len(set(labels)) == 14
     assert "Csanádpalota RO>HU (21Z000000000236Q)" in labels and "Csanádpalota HU>RO (21Z000000000236Q)" in labels
     assert "Kiskundorozsma 2 HU>RS (21Z000000000505P) - Interruptible" in labels
+    assert "Mosonmagyaróvár HU>AT (21Z000000000003C) - Interruptible" in labels
     assert at.selectbox(key="fee_instrument").options == ["Gas year", "Quarter", "Month", "Day"]
 
 
 def test_tab2_points_follow_the_tso():
-    at = start_app()
+    at = start_single_side()
     at.selectbox(key="fee_tso").select("Gastran").run()
     assert not at.exception
     labels = at.selectbox(key="fee_point_Gastran").options
@@ -206,7 +216,7 @@ def test_tab2_points_follow_the_tso():
 
 
 def test_tab2_demo_run_matches_the_hand_calculation():
-    at = start_app()
+    at = start_single_side()
     assert "positive number" in at.warning[0].value  # blank capacity: message, no result
     at.text_input(key="fee_capacity").set_value("50000").run()
     assert not at.exception
@@ -221,7 +231,7 @@ def test_tab2_demo_run_matches_the_hand_calculation():
 
 
 def test_tab2_labels_follow_the_currency_and_unit():
-    at = start_app()
+    at = start_single_side()
     at.text_input(key="fee_capacity").set_value("50000")
     at.selectbox(key="fee_tso").select("BGTRGAZ").run()
     labels = at.selectbox(key="fee_point_BGTRGAZ").options
@@ -237,7 +247,7 @@ def test_tab2_labels_follow_the_currency_and_unit():
 
 
 def test_tab2_interruptible_point_says_so():
-    at = start_app()
+    at = start_single_side()
     at.text_input(key="fee_capacity").set_value("50000")
     labels = at.selectbox(key="fee_point_FGSZ").options
     at.selectbox(key="fee_point_FGSZ").select_index(
@@ -248,7 +258,7 @@ def test_tab2_interruptible_point_says_so():
 
 @pytest.mark.parametrize("instrument,lines", [("gas_year", 12 + 1), ("quarter", 3 + 1), ("month", 1 + 1), ("day", 1 + 1)])
 def test_tab2_every_instrument_produces_an_invoice_that_sums_to_the_total(instrument, lines):
-    at = start_app()
+    at = start_single_side()
     at.text_input(key="fee_capacity").set_value("50000")
     at.selectbox(key="fee_instrument").select(instrument).run()
     assert not at.exception, [e.value for e in at.exception]
@@ -259,15 +269,124 @@ def test_tab2_every_instrument_produces_an_invoice_that_sums_to_the_total(instru
 
 
 def test_tab2_invalid_capacity_is_a_message():
-    at = start_app()
+    at = start_single_side()
     at.text_input(key="fee_capacity").set_value("abc").run()
     assert any("positive number" in w.value for w in at.warning)
     assert [m.label for m in at.metric] == []
 
 
 def test_tab2_has_no_fx_input():
-    at = start_app()
+    at = start_single_side()
     assert [t.key for t in at.text_input] == ["route_fx", "fee_capacity"]
+
+
+# --- tab 2 booking types and bundles (real tariff file) -------------------------------------------
+
+@pytest.fixture
+def real_app(monkeypatch):
+    monkeypatch.setenv(tariffs.PATH_ENV_VAR, str(tariffs.DEFAULT_PATH))
+    return start_app()
+
+
+def test_tab2_booking_type_changes_the_dropdowns(real_app):
+    at = real_app
+    keys = lambda: {s.key for s in at.selectbox}
+    assert "fee_bundle" in keys() and "fee_tso" not in keys()
+    assert len(at.selectbox(key="fee_bundle").options) == 43
+    at.radio(key="fee_booking").set_value("Single side").run()
+    assert {"fee_tso", "fee_point_FGSZ"} <= keys() and "fee_bundle" not in keys()
+    assert len(at.selectbox(key="fee_tso").options) == 21
+    at.selectbox(key="fee_tso").select("BGTRGAZ").run()
+    assert len(at.selectbox(key="fee_point_BGTRGAZ").options) == 13
+    at.radio(key="fee_booking").set_value("LNG entry").run()
+    assert not at.exception
+    assert "fee_tso" not in keys() and len(at.selectbox(key="fee_lng").options) == 14
+
+
+def test_tab2_bundle_shows_both_sides_and_waits_for_the_rate(real_app):
+    at = real_app
+    assert at.selectbox(key="fee_bundle").value.label() == "Mosonmagyaróvár AT>HU (Gas Connect Austria + FGSZ)"
+    at.text_input(key="fee_capacity").set_value("50,000").run()
+    assert not at.exception, [e.value for e in at.exception]
+    totals = [m.value for m in at.metric if m.label.startswith("Total cost")]
+    assert totals == ["2,605.88", "782,558"]
+    invoices = frames(at)[-2:]
+    assert invoices[0]["Amount (EUR)"].tolist() == ["878.07", "849.74", "878.07", "2,605.88"]
+    assert invoices[1]["Amount (HUF)"].tolist() == ["263,688", "255,182", "263,688", "782,558"]
+    assert [t.key for t in at.text_input if t.key.startswith("fee_rate_")] == ["fee_rate_HUF"]
+    assert any("HUF per EUR rate" in i.value for i in at.info)
+    assert "Bundle total (EUR)" not in [m.label for m in at.metric]
+
+
+def test_tab2_bundle_total_after_the_rate(real_app):
+    at = real_app
+    at.text_input(key="fee_capacity").set_value("50000").run()  # the rate box appears with a result
+    at.text_input(key="fee_rate_HUF").set_value("395.5").run()
+    assert not at.exception
+    metrics = {m.label: m.value for m in at.metric}
+    assert metrics["Bundle total (EUR)"] == "4,584.53"
+    assert any("at 1 EUR = 395.5 HUF" in c.value for c in at.caption)
+
+
+def test_tab2_bundle_with_both_sides_in_eur_has_no_rate_box(real_app):
+    at = real_app
+    options = at.selectbox(key="fee_bundle").options
+    at.selectbox(key="fee_bundle").select_index(
+        options.index("Kulata/Sidirokastron BG>GR (Bulgartransgaz + DESFA)"))
+    at.text_input(key="fee_capacity").set_value("50000").run()
+    assert not at.exception
+    assert not [t for t in at.text_input if t.key.startswith("fee_rate_")]
+    assert "Bundle total (EUR)" in [m.label for m in at.metric]
+
+
+def test_tab2_lng_entry_has_no_fx(real_app):
+    at = real_app
+    at.radio(key="fee_booking").set_value("LNG entry").run()
+    at.text_input(key="fee_capacity").set_value("50000").run()
+    assert not at.exception
+    assert [t.key for t in at.text_input] == ["route_fx", "fee_capacity"]
+    assert len([m for m in at.metric if m.label.startswith("Total cost")]) == 1
+
+
+def test_tab2_gas_year_shows_both_tariffs_and_splits_the_invoice(real_app):
+    at = real_app
+    at.radio(key="fee_booking").set_value("Single side").run()
+    at.selectbox(key="fee_tso").select("GCA").run()
+    options = at.selectbox(key="fee_point_GCA").options
+    at.selectbox(key="fee_point_GCA").select_index(options.index("Mosonmagyaróvár AT>HU (21Z000000000003C)"))
+    at.selectbox(key="fee_instrument").select("gas_year").run()
+    at.selectbox(key="fee_gas_year").select(2026)
+    at.text_input(key="fee_capacity").set_value("50000").run()
+    assert not at.exception, [e.value for e in at.exception]
+    metrics = {m.label: m.value for m in at.metric}
+    assert metrics["Price (Year, EUR per kWh/h)"] == "3.9700 / 4.1000"
+    assert metrics["Total cost (EUR)"] == "8,473.40"
+    assert any("from 2026-01-01 for 2026-10-01 to 2026-12-31" in c.value for c in at.caption)
+    invoice = frames(at)[-1]
+    assert invoice["Amount (EUR)"].tolist()[:4] == ["702.45", "679.79", "702.45", "725.46"]
+    assert invoice["Amount (EUR)"].tolist()[-1] == "8,473.40"
+
+
+def test_tab2_repeated_tariff_is_shown_once(real_app):
+    at = real_app
+    at.radio(key="fee_booking").set_value("Single side").run()
+    at.selectbox(key="fee_tso").select("EUSTR").run()
+    options = at.selectbox(key="fee_point_EUSTR").options
+    at.selectbox(key="fee_point_EUSTR").select_index(options.index("Balassagyarmat SK>HU (21Z000000000358C)"))
+    at.selectbox(key="fee_instrument").select("gas_year").run()
+    at.selectbox(key="fee_gas_year").select(2025)
+    at.text_input(key="fee_capacity").set_value("50000").run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert {m.label: m.value for m in at.metric}["Price (Year, EUR per kWh/h)"] == "8.7600 / 9.6360"
+
+
+def test_real_file_is_the_default_and_tab1_still_prices_bg_to_hu(monkeypatch):
+    monkeypatch.delenv(tariffs.PATH_ENV_VAR)
+    at = start_app()
+    assert "tariffs_real.xlsx" in at.sidebar.caption[0].value
+    point_table = frames(at)[0]
+    assert point_table["TSO"].tolist() == ["Bulgartransgaz", "Gastrans", "Gastrans", "FGSZ"]
+    assert not at.error
 
 
 # --- 7.5 validation messages ------------------------------------------------------------------------------

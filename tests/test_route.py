@@ -10,7 +10,9 @@ import pytest
 from core import money, points
 from core.optimizer import DAILY, MONTHLY, QUARTERLY, Plan
 from core.points import BULGARTRANSGAZ, FGSZ, GASTRANS
-from core.route import RouteError, RouteResult, TsoLeg, TsoOracle, calculate_route, parse_fx_rate, point_tariff
+from core.route import (
+    RouteError, RouteResult, TsoLeg, TsoOracle, calculate_route, parse_fx_rate, point_tariff, point_tariff_used,
+)
 from core.tariffs import load_tariffs
 
 from .helpers import make_row, make_table
@@ -375,3 +377,51 @@ def test_daily_tariff_is_the_price_of_one_day():
     result = calculate_route(table, "BG", "HU", date(2026, 12, 1), date(2026, 12, 5), "400")
     fgsz = leg(result, FGSZ)
     assert point_tariff(table, fgsz.points[0], fgsz.plan.segments[0]) == (4,)
+
+
+# --- products across tariff changes -------------------------------------------------------------
+
+def calendar_year_route_table(year_prices=(3.97, 4.10)):
+    """BG to HU where Bulgartransgaz's tariffs change on 1 January 2027."""
+    rows = []
+    for p in points.route_points("BG", "HU"):
+        if p.tso == BULGARTRANSGAZ:
+            rows += [
+                make_row(eic=p.eic, direction=p.direction, operator=p.tso, **FORMATS[p.tso],
+                         valid_from="2026-01-01", valid_to="2026-12-31", prices={"Year": year_prices[0]}),
+                make_row(eic=p.eic, direction=p.direction, operator=p.tso, **FORMATS[p.tso],
+                         valid_from="2027-01-01", valid_to=None, prices={"Year": year_prices[1]}),
+            ]
+        else:
+            rows.append(make_row(eic=p.eic, direction=p.direction, operator=p.tso, **FORMATS[p.tso],
+                                 valid_from="2026-01-01", valid_to=None))
+    return make_table(*rows)
+
+
+def test_yearly_product_across_a_1_january_tariff_change():
+    table = calendar_year_route_table()
+    bg = [p for p in points.route_points("BG", "HU") if p.tso == BULGARTRANSGAZ]
+    assert TsoOracle(table, bg).year_price(2026) == Fraction("3.97") * 92 / 365 + Fraction("4.10") * 273 / 365
+
+
+def test_optimiser_compares_the_weighted_yearly_price():
+    # Four quarters cost 4 x 300 = 1200. Priced from its first day the year (1000) would win;
+    # weighted it costs 1000 x 92/365 + 1400 x 273/365 = 1299.18, so the quarters win.
+    table = calendar_year_route_table(year_prices=(1000.0, 1400.0))
+    bg_points = [p for p in points.route_points("BG", "HU") if p.tso == BULGARTRANSGAZ]
+    assert TsoOracle(table, bg_points).year_price(2026) > 1200
+    result = calculate_route(table, "BG", "HU", date(2026, 10, 1), date(2027, 9, 30), "400")
+    bg = leg(result, BULGARTRANSGAZ)
+    assert [seg.product for seg in bg.plan.segments] == ["quarterly"] * 4
+    assert bg.plan.total == 1200
+
+
+def test_product_priced_from_two_rows_in_details():
+    table = calendar_year_route_table()
+    result = calculate_route(table, "BG", "HU", date(2026, 10, 1), date(2027, 9, 30), "400")
+    bg = leg(result, BULGARTRANSGAZ)
+    year = bg.plan.segments[0]
+    assert year.product == "yearly"
+    assert point_tariff(table, bg.points[0], year) == (Fraction("3.97"), Fraction("4.1"))
+    assert point_tariff_used(table, bg.points[0], year) == "from 2026-01-01, from 2027-01-01 (open-ended)"
+    assert year.tariff_used == "exit from 2026-01-01, from 2027-01-01 (open-ended)"

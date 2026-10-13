@@ -10,14 +10,14 @@ import pytest
 from core import fee, money, points
 from core.optimizer import MONTHLY, QUARTERLY, optimize
 from core.route import RouteError, RouteResult, TsoOracle, calculate_route
-from core.tariffs import load_tariffs, resolve_tariff_path
+from core.tariffs import DEFAULT_SAMPLE_PATH, load_tariffs
 
 from .helpers import make_row, make_table
 
 
 @pytest.fixture(scope="module")
 def sample():
-    result = load_tariffs(resolve_tariff_path({}))
+    result = load_tariffs(DEFAULT_SAMPLE_PATH)
     assert result.ok and not result.warnings
     return result.table
 

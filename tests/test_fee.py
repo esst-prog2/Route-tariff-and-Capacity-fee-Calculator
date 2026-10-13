@@ -6,7 +6,7 @@ import pytest
 from core import fee, money, points
 from core.fee import (DAY, GAS_YEAR, MONTH, QUARTER, FeeError, FeeResult,
                       calculate_fee, resolve_period)
-from core.tariffs import load_tariffs, resolve_tariff_path
+from core.tariffs import DEFAULT_SAMPLE_PATH, load_tariffs
 
 from .helpers import make_row, make_table
 
@@ -53,7 +53,7 @@ def test_demo_quarter_on_hand_built_prices():
 
 
 def test_demo_quarter_on_the_sample_file():
-    table = load_tariffs(resolve_tariff_path({})).table
+    table = load_tariffs(DEFAULT_SAMPLE_PATH).table
     start, end = resolve_period(QUARTER, year=2026, quarter=4)
     result = calculate_fee(table, POINT, QUARTER, start, end, "50,000")
     assert isinstance(result, FeeResult)
@@ -195,7 +195,7 @@ def test_bulgartransgaz_quarter_without_the_division_by_24():
 
 
 def test_sample_figures_for_the_new_tsos():
-    table = load_tariffs(resolve_tariff_path({})).table
+    table = load_tariffs(DEFAULT_SAMPLE_PATH).table
     start, end = resolve_period(QUARTER, year=2026, quarter=4)
     gastrans = calculate_fee(table, GASTRANS_POINT, QUARTER, start, end, "50000")
     bg = calculate_fee(table, BG_POINT, QUARTER, start, end, "50000")
