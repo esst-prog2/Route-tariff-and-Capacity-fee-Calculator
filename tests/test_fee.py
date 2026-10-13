@@ -10,7 +10,7 @@ from core.tariffs import load_tariffs, resolve_tariff_path
 
 from .helpers import make_row, make_table
 
-POINT = next(p for p in points.entries() if p.name == "Kiskundorozsma 2")
+POINT = next(p for p in points.POINTS if p.key == ("FGSZ", "21Z000000000505P", "Entry"))
 
 
 def table_with(prices, valid_from="2026-10-01", valid_to=None):
@@ -45,7 +45,7 @@ def test_demo_quarter_on_hand_built_prices():
     start, end = resolve_period(QUARTER, year=2026, quarter=4)
     result = calculate_fee(table, POINT, QUARTER, start, end, "50000")
     assert isinstance(result, FeeResult)
-    assert money.format_decimal(result.capacity_kwh_h, 2) == "2083.33"
+    assert money.format_decimal(result.capacity, 2) == "2083.33"
     assert result.price_column == "Q4_Oct" and result.price == Fraction("751.255428")
     assert money.format_decimal(result.exact_total, 2) == "1565115.48"
     assert result.total == 1_565_115
@@ -164,3 +164,57 @@ def test_year_lists_run_from_the_earliest_row_to_two_gas_years_after_today():
 def test_year_lists_start_at_todays_gas_year_when_the_point_has_no_rows():
     table = make_table(make_row(eic="OTHER"))
     assert fee.gas_year_choices(table, POINT, date(2026, 10, 2)) == [2026, 2027, 2028]
+
+
+# --- Gastrans and Bulgartransgaz: own unit, own currency, cents ---------------------------------------
+
+GASTRANS_POINT = next(p for p in points.POINTS if p.key == ("Gastran", "21Z000000000505P", "Exit"))
+BG_POINT = next(p for p in points.POINTS if p.key == ("BGTRGAZ", "58Z-000000007-KZ", "Exit"))
+
+
+def test_gastrans_quarter_in_eur_per_kwh_h():
+    table = make_table(make_row(eic=GASTRANS_POINT.eic, direction="Exit", operator="Gastran", currency="EUR",
+                                valid_from="2026-10-01", valid_to=None, prices={"Q4_Oct": 6.42}))
+    start, end = resolve_period(QUARTER, year=2026, quarter=4)
+    result = calculate_fee(table, GASTRANS_POINT, QUARTER, start, end, "50000")
+    assert (result.unit, result.currency) == ("kWh/h", "EUR")
+    assert money.format_decimal(result.capacity, 2) == "2083.33"
+    assert result.total == 1_337_500 and money.format_amount(result.total, "EUR") == "13,375.00"
+
+
+def test_bulgartransgaz_quarter_without_the_division_by_24():
+    table = make_table(make_row(eic=BG_POINT.eic, direction="Exit", operator="BGTRGAZ", currency="EUR", unit="kWh/d",
+                                valid_from="2026-10-01", valid_to=None, prices={"Q4_Oct": 0.242217}))
+    start, end = resolve_period(QUARTER, year=2026, quarter=4)
+    result = calculate_fee(table, BG_POINT, QUARTER, start, end, "50,000")
+    assert (result.unit, result.capacity) == ("kWh/d", 50_000)
+    assert result.exact_total == Fraction("12110.85")
+    assert money.format_amount(result.total, "EUR") == "12,110.85"
+    assert [money.format_amount(line.amount, "EUR") for line in result.invoice] == ["4,080.83", "3,949.19", "4,080.83"]
+    assert sum(line.amount for line in result.invoice) == result.total
+
+
+def test_sample_figures_for_the_new_tsos():
+    table = load_tariffs(resolve_tariff_path({})).table
+    start, end = resolve_period(QUARTER, year=2026, quarter=4)
+    gastrans = calculate_fee(table, GASTRANS_POINT, QUARTER, start, end, "50000")
+    bg = calculate_fee(table, BG_POINT, QUARTER, start, end, "50000")
+    assert money.format_amount(gastrans.total, "EUR") == "13,375.00"
+    assert bg.price == Fraction("0.2422174")  # the full cell; 0.242217 is its 6-decimal rounding
+    assert money.format_amount(bg.total, "EUR") == "12,110.87"
+
+
+def test_interruptible_point_reports_its_capacity_type():
+    point = next(p for p in points.POINTS if p.key == ("Gastran", "58Z-000000007-KZ", "Exit"))
+    table = make_table(make_row(eic=point.eic, direction="Exit", operator="Gastran", currency="EUR", capacity="Interruptible"))
+    result = calculate_fee(table, point, DAY, date(2026, 1, 5), date(2026, 1, 5), "24")
+    assert result.capacity_type == "Interruptible"
+
+
+@pytest.mark.parametrize("capacity", ["1", "50000", "12345.678"])
+def test_eur_invoice_always_sums_to_the_total_in_cents(capacity):
+    table = make_table(make_row(eic=BG_POINT.eic, direction="Exit", operator="BGTRGAZ", currency="EUR", unit="kWh/d",
+                                valid_from="2026-10-01", valid_to=None, prices={"Year": 0.981251}))
+    start, end = resolve_period(GAS_YEAR, gas_year=2026)
+    result = calculate_fee(table, BG_POINT, GAS_YEAR, start, end, capacity)
+    assert len(result.invoice) == 12 and sum(line.amount for line in result.invoice) == result.total

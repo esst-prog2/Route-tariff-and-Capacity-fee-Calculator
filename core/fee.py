@@ -1,7 +1,8 @@
 """Capacity Fee Calculator: price one product instrument at one point.
 
 Public entry points are `resolve_period` and `calculate_fee`; `calculate_fee`
-returns a `FeeResult` or a `FeeError` carrying a message for the user."""
+returns a `FeeResult` or a `FeeError` carrying a message for the user.
+Amounts stay in the point's own currency and capacity unit."""
 
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ from datetime import date
 from fractions import Fraction
 
 from . import periods
-from .money import parse_number, round_whole, split_by_weights
+from .money import parse_number, round_minor, split_by_weights
 from .points import Point
 from .tariffs import TariffTable
 
@@ -35,7 +36,7 @@ class InvoiceLine:
     year: int
     month: int
     days: int
-    amount: int  # whole HUF
+    amount: int  # minor units of the currency: whole HUF, or EUR cents
 
 
 @dataclass(frozen=True)
@@ -45,12 +46,15 @@ class FeeResult:
     start: date
     end: date
     capacity_kwh_d: Fraction
-    capacity_kwh_h: Fraction
+    capacity: Fraction  # in `unit`
+    unit: str  # kWh/h or kWh/d
+    currency: str
+    capacity_type: str
     price_column: str
-    price: Fraction  # HUF per 1 kWh/h for the whole product period
+    price: Fraction  # `currency` per 1 `unit` for the whole product period
     tariff_used: str
     exact_total: Fraction
-    total: int  # whole HUF
+    total: int  # minor units of the currency: whole HUF, or EUR cents
     invoice: tuple[InvoiceLine, ...]
 
 
@@ -99,21 +103,21 @@ def calculate_fee(
     if instrument not in INSTRUMENTS or start is None or end is None or end < start:
         return FeeError("Choose a product period.")
 
-    row = table.find_row(point.eic, point.direction, start)
+    row = table.find_row(*point.key, start)
     if row is None:
-        return FeeError(f"No tariff exists for {point.cleaned_name} on {start.isoformat()}.")
+        return FeeError(f"No tariff exists for {point.tso_name} {point.cleaned_name} on {start.isoformat()}.")
 
     column, price = _price_cell(row, instrument, start)
-    capacity_kwh_h = capacity_kwh_d / HOURS_PER_DAY
-    exact_total = capacity_kwh_h * price
-    total = round_whole(exact_total)
+    capacity = capacity_kwh_d / HOURS_PER_DAY if row.unit == "kWh/h" else capacity_kwh_d
+    exact_total = capacity * price
+    total = round_minor(exact_total, row.currency)
 
     slices = periods.month_slices(start, end)
     amounts = split_by_weights(total, [s.days for s in slices])
     invoice = tuple(InvoiceLine(s.year, s.month, s.days, a) for s, a in zip(slices, amounts))
 
     return FeeResult(
-        point, instrument, start, end, capacity_kwh_d, capacity_kwh_h,
+        point, instrument, start, end, capacity_kwh_d, capacity, row.unit, row.currency, row.capacity_type,
         column, price, row.source_text(), exact_total, total, invoice,
     )
 
@@ -121,7 +125,7 @@ def calculate_fee(
 def gas_year_choices(table: TariffTable, point: Point, today: date) -> list[int]:
     """Gas years (by start year) from the point's earliest tariff row to two
     gas years after today's."""
-    earliest = table.earliest_valid_from(point.eic, point.direction)
+    earliest = table.earliest_valid_from(*point.key)
     last = periods.gas_year_start_year(today) + 2
     first = periods.gas_year_start_year(earliest) if earliest else periods.gas_year_start_year(today)
     return list(range(first, last + 1))

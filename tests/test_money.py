@@ -46,3 +46,13 @@ def test_format_decimal_rounds_half_up_for_display():
     assert money.format_decimal(Fraction(1, 3), 4) == "0.3333"
     assert money.format_decimal(Fraction(5, 10000), 3) == "0.001"
     assert money.format_whole(1565115) == "1,565,115"
+
+
+def test_minor_units_per_currency():
+    from core.money import format_amount, round_minor
+
+    assert round_minor(Fraction("1565115.48"), "HUF") == 1_565_115
+    assert round_minor(Fraction("12110.845"), "EUR") == 1_211_085
+    assert format_amount(1_565_115, "HUF") == "1,565,115"
+    assert format_amount(1_211_085, "EUR") == "12,110.85"
+    assert format_amount(5, "EUR") == "0.05"

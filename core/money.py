@@ -74,3 +74,22 @@ def format_decimal(amount: Fraction, places: int) -> str:
 
 def format_whole(amount: int) -> str:
     return f"{amount:,}"
+
+
+# Amounts are rounded and split in the currency's smallest shown unit: whole forints, euro cents.
+CURRENCY_DECIMALS = {"HUF": 0, "EUR": 2}
+
+
+def round_minor(amount: Fraction, currency: str) -> int:
+    """`amount` in minor units (forints, cents), rounded half away from zero."""
+    return round_whole(amount * 10 ** CURRENCY_DECIMALS[currency])
+
+
+def format_amount(minor: int, currency: str) -> str:
+    """Minor units as text with thousands commas: 1,565,115 (HUF), 12,110.85 (EUR)."""
+    places = CURRENCY_DECIMALS[currency]
+    if places == 0:
+        return format_whole(minor)
+    sign = "-" if minor < 0 else ""
+    whole, rest = divmod(abs(minor), 10 ** places)
+    return f"{sign}{whole:,}.{rest:0{places}d}"
