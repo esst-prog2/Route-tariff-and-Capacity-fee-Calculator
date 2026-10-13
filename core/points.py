@@ -1,6 +1,6 @@
 """The point catalog built from the loaded tariff rows (single sides, LNG
-entries and bundled border points), and the HU - RS - BG corridor that tab 1
-routes run along.
+entries and bundled border points), and the network of border crossings that
+tab 1 routes run on.
 
 A point is identified by TSO, EIC and direction, never by the raw `Network
 point` text: one EIC covers both directions of a border point and both TSOs'
@@ -90,8 +90,7 @@ class Bundle:
 
 
 # Points the app knew before the catalog was built from the data. Their names are fixed here
-# (they win over the cleaning rule, also for the other TSO's side of the same EIC), and the
-# tab 1 corridor uses them.
+# (they win over the cleaning rule, also for the other TSO's side of the same EIC).
 POINTS: tuple[Point, ...] = (
     Point(FGSZ, "Mosonmagyaróvár", "AT>HU", "21Z000000000003C", ENTRY),
     Point(FGSZ, "Beregdaróc", "UA>HU", "21Z000000000139O", ENTRY),
@@ -266,34 +265,126 @@ def build_catalog(table: TariffTable) -> Catalog:
     return Catalog(singles, lng, bundles, capacity_types)
 
 
-# --- the HU - RS - BG corridor (tab 1) ------------------------------------------------------
+# --- the network tab 1 routes run on ---------------------------------------------------------
 
-COUNTRIES: tuple[str, ...] = ("HU", "RS", "BG")  # in corridor order
-COUNTRY_TSO = {"HU": FGSZ, "RS": GASTRANS, "BG": BULGARTRANSGAZ}
-BORDER_EICS = {
-    frozenset({"HU", "RS"}): "21Z000000000505P",  # Kiskundorozsma 2
-    frozenset({"RS", "BG"}): "58Z-000000007-KZ",  # Kireevo/Zaychar
-}
+class RouteNotPossible(ValueError):
+    """A point cannot be added to a route; the message says why."""
 
 
-def _point(tso: str, eic: str, direction: str, flow: str) -> Point:
-    return next(p for p in POINTS if p.key == (tso, eic, direction) and p.flow == flow)
+@dataclass(frozen=True)
+class Crossing:
+    """One TSO's exit and the next TSO's entry at a border point, in one direction."""
+
+    exit: Point
+    entry: Point
+
+    @property
+    def from_country(self) -> str:
+        return self.exit.flow.split(">")[0]
+
+    @property
+    def to_country(self) -> str:
+        return self.exit.flow.split(">")[1]
 
 
-def crossing(from_country: str, to_country: str) -> list[Point]:
-    """The exit of `from_country`'s TSO and the entry of `to_country`'s TSO
-    at the border between two neighbouring countries."""
-    eic = BORDER_EICS[frozenset({from_country, to_country})]
-    flow = f"{from_country}>{to_country}"
-    return [_point(COUNTRY_TSO[from_country], eic, EXIT, flow), _point(COUNTRY_TSO[to_country], eic, ENTRY, flow)]
+@dataclass(frozen=True)
+class MapPoint:
+    """A place on a border between two route countries, crossable in one or both directions."""
+
+    name: str
+    countries: tuple[str, str]  # in alphabetical order
+    crossings: tuple[Crossing, ...]
+
+    @property
+    def label(self) -> str:
+        return f"{self.name} ({self.countries[0]} - {self.countries[1]})"
+
+    def crossing_from(self, country: str) -> Crossing | None:
+        return next((c for c in self.crossings if c.from_country == country), None)
 
 
-def route_points(begin: str, end: str) -> list[Point]:
-    """Hub to hub: the exit and entry at every border crossed, in route order.
-    Raises ValueError for unknown countries or when begin == end."""
-    if begin not in COUNTRIES or end not in COUNTRIES or begin == end:
-        raise ValueError(f"no route from {begin} to {end}")
-    i, j = COUNTRIES.index(begin), COUNTRIES.index(end)
-    step = 1 if j > i else -1
-    path = [COUNTRIES[k] for k in range(i, j + step, step)]
-    return [p for a, b in zip(path, path[1:]) for p in crossing(a, b)]
+@dataclass(frozen=True)
+class Network:
+    countries: tuple[str, ...]  # the countries a route can begin or end in
+    points: tuple[MapPoint, ...]
+
+    def point(self, label: str) -> MapPoint:
+        found = next((p for p in self.points if p.label == label), None)
+        if found is None:
+            raise RouteNotPossible(f"Not possible: {label} is not a border point of the loaded tariff file.")
+        return found
+
+    def points_from(self, country: str) -> list[MapPoint]:
+        """The map points a route that has reached `country` can cross next."""
+        return [p for p in self.points if p.crossing_from(country) is not None]
+
+
+# Pipelines with their own TSO but no market of their own: a route cannot begin or end in them.
+PIPELINES = frozenset({"TAP", "ICGB"})
+
+
+def build_network(catalog: Catalog) -> Network:
+    """Border crossings between two TSOs (same flow, same EIC or the Baumgarten pair), whatever
+    their capacity type, grouped into map points. The TAP and ICGB pipelines, and their points,
+    are left out."""
+    extra = set(EXTRA_BUNDLES)
+    crossings = [
+        Crossing(x, n) for x in catalog.singles if x.direction == EXIT
+        for n in catalog.singles if n.direction == ENTRY and n.tso != x.tso and n.flow == x.flow
+        and (n.eic == x.eic or (x.key, n.key) in extra)
+    ]
+    inside = [c for c in crossings if not {c.from_country, c.to_country} & PIPELINES]
+    countries = {c for crossing in inside for c in (crossing.from_country, crossing.to_country)}
+
+    places: dict[tuple[str, tuple[str, str]], list[Crossing]] = {}
+    for crossing in inside:
+        pair = tuple(sorted((crossing.from_country, crossing.to_country)))
+        places.setdefault((crossing.entry.name, pair), []).append(crossing)
+    points = tuple(sorted(
+        (MapPoint(name, pair, tuple(sorted(found, key=lambda c: c.exit.flow))) for (name, pair), found in places.items()),
+        key=lambda p: (p.name.casefold(), p.countries),
+    ))
+    return Network(tuple(sorted(countries)), points)
+
+
+def walk(network: Network, begin: str, labels: list[str]) -> list[Crossing]:
+    """The crossings of a route that starts in `begin` and crosses the given map points in
+    order. Raises RouteNotPossible at the first point that cannot follow."""
+    if begin not in network.countries:
+        raise RouteNotPossible(f"Not possible: {begin} is not a country a route can begin in.")
+    current, visited, crossings = begin, {begin}, []
+    for label in labels:
+        point = network.point(label)
+        crossing = point.crossing_from(current)
+        if crossing is None:
+            raise RouteNotPossible(f"Not possible: {point.label} does not border {current}.")
+        if crossing.to_country in visited:
+            raise RouteNotPossible(f"Not possible: the route would enter {crossing.to_country} a second time.")
+        current = crossing.to_country
+        visited.add(current)
+        crossings.append(crossing)
+    return crossings
+
+
+def extend_route(network: Network, begin: str, labels: list[str], label: str) -> list[str]:
+    """The route's points with `label` added; raises RouteNotPossible with the reason."""
+    walk(network, begin, [*labels, label])
+    return [*labels, label]
+
+
+def route_end(network: Network, begin: str, labels: list[str]) -> str:
+    crossings = walk(network, begin, labels)
+    return crossings[-1].to_country if crossings else begin
+
+
+def route_text(network: Network, begin: str, labels: list[str]) -> str:
+    """'BG > Kireevo/Zaychar > RS > Kiskundorozsma 2 > HU'."""
+    parts = [begin]
+    for crossing, label in zip(walk(network, begin, labels), labels):
+        parts += [network.point(label).name, crossing.to_country]
+    return " > ".join(parts)
+
+
+def route_crossing_points(network: Network, begin: str, labels: list[str]) -> list[Point]:
+    """Hub to hub: the exit and the entry at every point crossed, in route order."""
+    return [p for crossing in walk(network, begin, labels) for p in (crossing.exit, crossing.entry)]

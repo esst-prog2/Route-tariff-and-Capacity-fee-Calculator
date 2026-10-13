@@ -3,18 +3,20 @@ collects inputs and formats results."""
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import date
 from fractions import Fraction
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
-from core import fee, money, periods, points
+from core import fee, map_points, money, periods, points
 from core.labels import products_text
 from core.points import Bundle
-from core.route import RouteError, calculate_route, point_tariff, point_tariff_used
-from core.tariffs import INTERRUPTIBLE, LoadResult, load_tariffs, resolve_tariff_path
+from core.route import FIRST_POINT_MESSAGE, RouteError, calculate_route, point_tariff, point_tariff_used, rate_message
+from core.tariffs import INTERRUPTIBLE, TSO_FORMATS, LoadResult, load_tariffs, resolve_tariff_path
 
 st.set_page_config(page_title="Route Tariff and Capacity Fee Calculator", layout="wide")
 
@@ -72,10 +74,114 @@ def dates_text(start: date, end: date) -> str:
 
 # --- tab 1 -----------------------------------------------------------------------------------
 
-def route_tab(table) -> None:
-    left, right = st.columns(2)
-    begin = left.selectbox("Route beginning", points.COUNTRIES, index=points.COUNTRIES.index("BG"), key="route_begin")
-    end_country = right.selectbox("Route ending", points.COUNTRIES, index=points.COUNTRIES.index("HU"), key="route_end_country")
+MAP_HEIGHT = 750
+DEFAULT_BEGIN = "BG"
+DEFAULT_ROUTE = ("Kireevo/Zaychar", "Kiskundorozsma 2")  # BG > RS > HU
+
+
+@st.cache_data(show_spinner=False)
+def _countries_geojson() -> dict:
+    return json.loads(map_points.COUNTRIES_GEOJSON.read_text(encoding="utf-8"))
+
+
+def init_route(network: points.Network) -> None:
+    """The route lives in session state; it starts as the default BG > RS > HU route."""
+    if "route_points" in st.session_state:
+        return
+    names = {p.name: p.label for p in network.points}
+    route = [names[name] for name in DEFAULT_ROUTE if name in names]
+    st.session_state.route_points = route if len(route) == len(DEFAULT_ROUTE) else []
+    st.session_state.route_map_version = 0
+    st.session_state.route_message = None
+
+
+def add_route_point(network: points.Network, label: str) -> None:
+    """Add a point (from a map click or the Next point list), or keep the reason it cannot be added."""
+    begin = st.session_state.route_begin
+    try:
+        st.session_state.route_points = points.extend_route(network, begin, st.session_state.route_points, label)
+        st.session_state.route_message = None
+    except points.RouteNotPossible as refused:
+        st.session_state.route_message = str(refused)
+    st.session_state.route_map_version += 1  # a new map key starts with an empty selection
+
+
+def _next_point_chosen(network: points.Network) -> None:
+    label = st.session_state.route_next
+    if label:
+        add_route_point(network, label)
+    st.session_state.route_next = None
+
+
+def _remove_last() -> None:
+    st.session_state.route_points = st.session_state.route_points[:-1]
+    st.session_state.route_message = None
+
+
+def _clear_route() -> None:
+    st.session_state.route_points = []
+    st.session_state.route_message = None
+
+
+def route_map(network: points.Network, labels: list[str]) -> alt.LayerChart:
+    """Borders only, each country's code in its middle, a marker per border point; the route's
+    markers are highlighted and joined in order. Clicking a marker selects its label."""
+    countries = alt.Chart(alt.InlineData(values=_countries_geojson(), format=alt.DataFormat(property="features"))).mark_geoshape(
+        fill="transparent", stroke="#8a8a8a", strokeWidth=0.8, clip=True)
+    codes = pd.DataFrame([{"code": c, "lon": x, "lat": y} for c, (x, y) in map_points.COUNTRY_LABELS.items()
+                          if c in network.countries])
+    code_text = alt.Chart(codes).mark_text(fontSize=13, fontWeight="bold", color="#555555").encode(
+        longitude="lon:Q", latitude="lat:Q", text="code:N")
+
+    on_route = {label: i for i, label in enumerate(labels)}
+    rows = []
+    for point in network.points:
+        position = map_points.point_position(point.name, point.countries)
+        if position is not None:
+            rows.append({"label": point.label, "name": point.name, "between": f"{point.countries[0]} - {point.countries[1]}",
+                         "lon": position[0], "lat": position[1], "on_route": point.label in on_route,
+                         "order": on_route.get(point.label, -1)})
+    markers = pd.DataFrame(rows)
+    pick = alt.selection_point(name="pick", fields=["label"], on="click", clear=False)
+    dots = alt.Chart(markers).mark_circle(size=140, stroke="white", strokeWidth=1).encode(
+        longitude="lon:Q", latitude="lat:Q",
+        color=alt.condition("datum.on_route", alt.value("#d62728"), alt.value("#1f77b4")),
+        tooltip=[alt.Tooltip("name:N", title="Point"), alt.Tooltip("between:N", title="Between")],
+    ).add_params(pick)
+    line = alt.Chart(markers[markers["on_route"]]).mark_line(color="#d62728", strokeWidth=2).encode(
+        longitude="lon:Q", latitude="lat:Q", order="order:Q")
+    # Zoom to the border points and country labels (not to whole countries, which would shrink the
+    # map to fit eastern Ukraine), so the markers stay apart; borders beyond the frame are cut.
+    return (countries + line + dots + code_text).project(type="mercator", fit=map_points.map_frame()).properties(
+        height=MAP_HEIGHT)
+
+
+def route_tab(table, network: points.Network) -> None:
+    init_route(network)
+    countries = list(network.countries)
+    begin = st.selectbox("Route beginning", countries,
+                         index=countries.index(DEFAULT_BEGIN) if DEFAULT_BEGIN in countries else 0,
+                         key="route_begin", on_change=_clear_route)
+    route_labels = st.session_state.route_points
+
+    if st.session_state.route_message:
+        st.warning(st.session_state.route_message)
+        st.session_state.route_message = None
+
+    event = st.altair_chart(route_map(network, route_labels), on_select="rerun", width="stretch",
+                            key=f"route_map_{st.session_state.route_map_version}")
+    picked = event.selection.get("pick") if event and event.selection else None
+    if picked:
+        add_route_point(network, picked[0]["label"])
+        st.rerun()
+
+    current = points.route_end(network, begin, route_labels)
+    left, middle, right = st.columns([3, 1, 1], vertical_alignment="bottom")
+    left.selectbox(f"Next point (from {current})", [p.label for p in network.points_from(current)], index=None,
+                   placeholder="Choose a border point", key="route_next", on_change=_next_point_chosen, args=(network,))
+    middle.button("Remove last", on_click=_remove_last, disabled=not route_labels, key="route_remove_last", width="stretch")
+    right.button("Clear", on_click=_clear_route, disabled=not route_labels, key="route_clear", width="stretch")
+    st.markdown(f"**Route:** {points.route_text(network, begin, route_labels)}")
 
     left, right = st.columns(2)
     start = left.date_input("Booking start (inclusive)", value=date(2026, 10, 1), min_value=date(2000, 1, 1),
@@ -83,17 +189,21 @@ def route_tab(table) -> None:
     end = right.date_input("Booking end (inclusive)", value=date(2027, 3, 31), min_value=date(2000, 1, 1),
                            max_value=date(2100, 12, 31), format="YYYY-MM-DD", key="route_end")
 
-    fx_text = ""
-    if begin != end_country and "HU" in (begin, end_country):
-        fx_text = st.text_input("FX rate (HUF per 1 EUR)", value="", placeholder="e.g. 400", key="route_fx",
-                                help="Type today's rate. FGSZ's and the route's EUR/MWh are shown once a rate is entered.")
+    currencies = list(dict.fromkeys(
+        TSO_FORMATS[p.tso][0] for p in points.route_crossing_points(network, begin, route_labels)
+        if TSO_FORMATS[p.tso][0] != "EUR"))
+    rate_texts = {}
+    for column, currency in zip(st.columns(max(len(currencies), 1)), currencies):
+        rate_texts[currency] = column.text_input(
+            f"{currency} per 1 EUR", value="", placeholder="e.g. 400" if currency == "HUF" else "",
+            key=f"route_rate_{currency}", help="Type today's rate. EUR figures in this currency appear once it is entered.")
 
-    result = calculate_route(table, begin, end_country, start, end, fx_text)
+    result = calculate_route(table, begin, route_labels, start, end, rate_texts, network)
     if isinstance(result, RouteError):
-        st.error(result.message)
+        (st.info if result.message == FIRST_POINT_MESSAGE else st.error)(result.message)
         return
 
-    st.subheader(f"{begin} to {end_country}")
+    st.subheader(result.route_text)
     st.caption(f"Booking period {dates_text(start, end)} ({result.days} days), hub to hub.")
 
     st.markdown("**Network points on the route**")
@@ -133,13 +243,17 @@ def route_tab(table) -> None:
         if result.comparison_note:
             st.caption(f"Compared per TSO: {result.comparison_note}.")
         note = "Per-MWh figures assume the booked capacity is used fully on the booked days."
-        if result.fx_rate is not None:
-            note = f"FGSZ's EUR/MWh at 1 EUR = {plain_rate(result.fx_rate)} HUF. " + note
+        if result.rates_used:
+            rates = "; ".join(f"at 1 EUR = {plain_rate(rate)} {currency}" for currency, rate in result.rates_used)
+            note = f"EUR/MWh {rates}. " + note
         st.caption(note)
-    elif result.fx_message:
-        st.warning(result.fx_message)
     else:
-        st.info("Enter today's HUF per EUR rate to see FGSZ's and the route's EUR/MWh.")
+        for currency in result.invalid_rates:
+            st.warning(rate_message(currency))
+        if result.missing_rates:
+            names = " and ".join(f"{c} per EUR" for c in result.missing_rates)
+            plural = "s" if len(result.missing_rates) > 1 else ""
+            st.info(f"Enter today's {names} rate{plural} to see every point's and the route's EUR/MWh.")
 
     with st.expander("Details", expanded=False):
         details = [
@@ -296,8 +410,9 @@ if load_result.warnings:
         for message in load_result.warnings:
             st.write(message)
 
+catalog = points.build_catalog(load_result.table)
 route, capacity_fee = st.tabs(["Route Tariff Calculator", "Capacity Fee Calculator"])
 with route:
-    route_tab(load_result.table)
+    route_tab(load_result.table, points.build_network(catalog))
 with capacity_fee:
-    fee_tab(load_result.table, points.build_catalog(load_result.table))
+    fee_tab(load_result.table, catalog)

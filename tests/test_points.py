@@ -209,35 +209,102 @@ def test_two_sides_of_one_border_are_two_points():
     assert gastrans_exit.eic == fgsz_entry.eic and gastrans_exit.key != fgsz_entry.key
 
 
-# --- corridor ------------------------------------------------------------------------------
+# --- network (tab 1) ---------------------------------------------------------------------------
 
-def test_crossings():
-    assert describe(points.crossing("RS", "HU")) == [
-        (GASTRANS, "Exit", "Kiskundorozsma 2 (RS>HU)"), (FGSZ, "Entry", "Kiskundorozsma 2 (RS>HU)"),
-    ]
-    hu_rs = points.crossing("HU", "RS")
-    assert describe(hu_rs) == [(FGSZ, "Exit", "Kiskundorozsma 2 (HU>RS)"), (GASTRANS, "Entry", "Kiskundorozsma 2 (HU>RS)")]
-    assert "21Z000000000154S" not in {p.eic for p in hu_rs}
+@pytest.fixture(scope="module")
+def network(real):
+    return points.build_network(real)
 
 
-@pytest.mark.parametrize("begin,end,expected", [
-    ("BG", "HU", [(BULGARTRANSGAZ, "Exit", "Kireevo/Zaychar (BG>RS)"), (GASTRANS, "Entry", "Kireevo/Zaychar (BG>RS)"),
-                  (GASTRANS, "Exit", "Kiskundorozsma 2 (RS>HU)"), (FGSZ, "Entry", "Kiskundorozsma 2 (RS>HU)")]),
-    ("BG", "RS", [(BULGARTRANSGAZ, "Exit", "Kireevo/Zaychar (BG>RS)"), (GASTRANS, "Entry", "Kireevo/Zaychar (BG>RS)")]),
-    ("RS", "HU", [(GASTRANS, "Exit", "Kiskundorozsma 2 (RS>HU)"), (FGSZ, "Entry", "Kiskundorozsma 2 (RS>HU)")]),
-    ("HU", "RS", [(FGSZ, "Exit", "Kiskundorozsma 2 (HU>RS)"), (GASTRANS, "Entry", "Kiskundorozsma 2 (HU>RS)")]),
-    ("RS", "BG", [(GASTRANS, "Exit", "Kireevo/Zaychar (RS>BG)"), (BULGARTRANSGAZ, "Entry", "Kireevo/Zaychar (RS>BG)")]),
-    ("HU", "BG", [(FGSZ, "Exit", "Kiskundorozsma 2 (HU>RS)"), (GASTRANS, "Entry", "Kiskundorozsma 2 (HU>RS)"),
-                  (GASTRANS, "Exit", "Kireevo/Zaychar (RS>BG)"), (BULGARTRANSGAZ, "Entry", "Kireevo/Zaychar (RS>BG)")]),
+def label(network, name):
+    return next(p.label for p in network.points if p.name == name)
+
+
+def route(network, begin, *names):
+    return begin, [label(network, name) for name in names]
+
+
+def test_map_points_on_the_real_file(network):
+    assert network.countries == ("AT", "BG", "CR", "CZ", "DE", "GR", "HU", "IT", "NL", "PL", "RO", "RS", "SI", "SK", "UA")
+    assert sorted(p.name for p in network.points) == sorted([
+        "Mosonmagyaróvár", "VIP Oberkappel", "Tarvisio/Arnoldstein", "Murfeld/Ceršak", "Baumgarten",
+        "Kulata/Sidirokastron", "Negru Voda 1/Kardam", "Ruse/Giurgiu", "Kireevo/Zaychar", "Drávaszerdahely",
+        "Rogatec", "VIP Brandov-GASPOOL", "Cieszyn", "Lanžhot", "VIP TTF-THE-H", "Csanádpalota",
+        "Kiskundorozsma 2", "Balassagyarmat", "VIP Bereg", "Gorizia/Šempeter", "Vyrava", "Uzhgorod/Velké Kapušany",
+    ])
+    assert not {"Stara Zagora", "Komotini", "Nea Mesimvria"} & {p.name for p in network.points}
+
+
+def test_crossing_at_a_point_with_two_tsos_in_one_country(network):
+    tarvisio = network.point(label(network, "Tarvisio/Arnoldstein")).crossing_from("AT")
+    assert (tarvisio.exit.tso, tarvisio.entry.tso, tarvisio.exit.flow) == ("TAG", "snam", "AT>IT")
+    moson = network.point(label(network, "Mosonmagyaróvár")).crossing_from("HU")
+    assert moson.entry.tso == "GCA"
+
+
+def test_points_without_a_partner_are_not_map_points(network):
+    names = {p.name for p in network.points}
+    assert not {"Kiskundorozsma", "GCP GAZ-SYSTEM/UA TSO", "Beregdaróc", "Kipi", "Strandzha 1/Malkoclar",
+                "Kyustendil/Zidilovo", "Mazara del Vallo"} & names
+    assert "PL" not in {p.crossing_from("UA").to_country for p in network.points_from("UA")}
+
+
+def test_two_points_on_one_border(network):
+    from_bg = {p.name for p in network.points_from("BG")}
+    assert {"Negru Voda 1/Kardam", "Ruse/Giurgiu", "Kireevo/Zaychar", "Kulata/Sidirokastron"} == from_bg
+
+
+@pytest.mark.parametrize("begin,names,expected", [
+    ("BG", ("Kireevo/Zaychar", "Kiskundorozsma 2"), [
+        (BULGARTRANSGAZ, "Exit", "Kireevo/Zaychar (BG>RS)"), (GASTRANS, "Entry", "Kireevo/Zaychar (BG>RS)"),
+        (GASTRANS, "Exit", "Kiskundorozsma 2 (RS>HU)"), (FGSZ, "Entry", "Kiskundorozsma 2 (RS>HU)")]),
+    ("RS", ("Kiskundorozsma 2",), [
+        (GASTRANS, "Exit", "Kiskundorozsma 2 (RS>HU)"), (FGSZ, "Entry", "Kiskundorozsma 2 (RS>HU)")]),
+    ("HU", ("Kiskundorozsma 2", "Kireevo/Zaychar"), [
+        (FGSZ, "Exit", "Kiskundorozsma 2 (HU>RS)"), (GASTRANS, "Entry", "Kiskundorozsma 2 (HU>RS)"),
+        (GASTRANS, "Exit", "Kireevo/Zaychar (RS>BG)"), (BULGARTRANSGAZ, "Entry", "Kireevo/Zaychar (RS>BG)")]),
+    ("RS", ("Kireevo/Zaychar",), [
+        (GASTRANS, "Exit", "Kireevo/Zaychar (RS>BG)"), (BULGARTRANSGAZ, "Entry", "Kireevo/Zaychar (RS>BG)")]),
+    ("BG", ("Ruse/Giurgiu", "Csanádpalota"), [
+        (BULGARTRANSGAZ, "Exit", "Ruse/Giurgiu (BG>RO)"), ("TRANSGA", "Entry", "Ruse/Giurgiu (BG>RO)"),
+        ("TRANSGA", "Exit", "Csanádpalota (RO>HU)"), (FGSZ, "Entry", "Csanádpalota (RO>HU)")]),
+    ("HU", ("Mosonmagyaróvár", "Tarvisio/Arnoldstein"), [
+        (FGSZ, "Exit", "Mosonmagyaróvár (HU>AT)"), ("GCA", "Entry", "Mosonmagyaróvár (HU>AT)"),
+        ("TAG", "Exit", "Tarvisio/Arnoldstein (AT>IT)"), ("snam", "Entry", "Tarvisio/Arnoldstein (AT>IT)")]),
 ])
-def test_route_points_for_every_country_pair(begin, end, expected):
-    assert describe(points.route_points(begin, end)) == expected
+def test_route_points(network, begin, names, expected):
+    assert describe(points.route_crossing_points(network, *route(network, begin, *names))) == expected
 
 
-@pytest.mark.parametrize("begin,end", [("HU", "HU"), ("BG", "BG"), ("AT", "HU"), ("HU", "")])
-def test_same_or_unknown_country_is_not_a_route(begin, end):
-    with pytest.raises(ValueError):
-        points.route_points(begin, end)
+def test_route_text_and_end(network):
+    begin, labels = route(network, "BG", "Kireevo/Zaychar", "Kiskundorozsma 2")
+    assert points.route_text(network, begin, labels) == "BG > Kireevo/Zaychar > RS > Kiskundorozsma 2 > HU"
+    assert points.route_end(network, begin, labels) == "HU"
+    assert points.route_end(network, "HU", []) == "HU"
+
+
+def test_extend_route_adds_a_bordering_point(network):
+    begin, labels = route(network, "BG", "Kireevo/Zaychar")
+    assert [p.name for p in network.points_from("RS")] == ["Kireevo/Zaychar", "Kiskundorozsma 2"]
+    extended = points.extend_route(network, begin, labels, label(network, "Kiskundorozsma 2"))
+    assert points.route_text(network, begin, extended) == "BG > Kireevo/Zaychar > RS > Kiskundorozsma 2 > HU"
+
+
+def test_point_not_on_the_current_country(network):
+    with pytest.raises(points.RouteNotPossible, match=r"^Not possible: Vyrava \(PL - SK\) does not border BG\.$"):
+        points.extend_route(network, "BG", [], label(network, "Vyrava"))
+
+
+def test_entering_a_country_a_second_time(network):
+    begin, labels = route(network, "HU", "Balassagyarmat", "Baumgarten")
+    with pytest.raises(points.RouteNotPossible, match="would enter HU a second time"):
+        points.extend_route(network, begin, labels, label(network, "Mosonmagyaróvár"))
+
+
+@pytest.mark.parametrize("begin", ["TAP", "LT", ""])
+def test_unknown_beginning_is_not_possible(network, begin):
+    with pytest.raises(points.RouteNotPossible):
+        points.walk(network, begin, [])
 
 
 # --- the sample has rows for every point -------------------------------------------------------
