@@ -70,6 +70,22 @@ def test_one_side_of_a_bundle_has_no_tariff():
     assert result.message == ("No tariff exists for the FGSZ entry side (Mosonmagyaróvár (AT>HU)) on 2026-10-01.")
 
 
+def test_bundle_side_whose_tariff_ends_inside_the_period_names_the_first_day_without_one():
+    eic = "21Z000000000003C"
+    table = make_table(
+        make_row(eic=eic, direction="Exit", operator="GCA", currency="EUR", name="Mosonmagyaróvár - AT (AT>HU)",
+                 valid_from="2026-10-01", valid_to=None),
+        make_row(eic=eic, direction="Entry", name="Mosonmagyaróvár - HU (AT>HU)",
+                 valid_from="2026-10-01", valid_to="2026-11-15"),
+    )
+    moson = points.build_catalog(table).bundles[0]
+    start, end = resolve_period(QUARTER, year=2026, quarter=4)
+    result = fee.calculate_bundle_fee(table, moson, QUARTER, start, end, "50000")
+    assert isinstance(result, NoTariffError)
+    # The entry side has a tariff on 1 October; the first day it has none is 16 November.
+    assert result.message == ("No tariff exists for the FGSZ entry side (Mosonmagyaróvár (AT>HU)) on 2026-11-16.")
+
+
 def test_bundle_capacity_error_comes_before_tariff_check():
     table = two_sided_table()
     moson = points.build_catalog(table).bundles[0]
