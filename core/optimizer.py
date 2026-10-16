@@ -23,7 +23,7 @@ PRODUCTS = (DAILY, MONTHLY, QUARTERLY, YEARLY)
 
 
 class PriceOracle(Protocol):
-    """Prices in HUF per 1 kWh/h for the whole product period."""
+    """One TSO's prices in its own currency per 1 unit of its capacity unit, for the whole product period."""
 
     def day_price(self, day: date) -> Fraction: ...
 

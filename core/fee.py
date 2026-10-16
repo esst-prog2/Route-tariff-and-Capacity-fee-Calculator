@@ -39,6 +39,8 @@ class FeeError:
 class NoTariffError(FeeError):
     """No tariff row applies to the point on a day of the product period."""
 
+    day: date  # the first day of the period without a row
+
 
 @dataclass(frozen=True)
 class InvoiceLine:
@@ -158,7 +160,7 @@ def calculate_fee(
         price, parts = table.product_price(*point.key, start, end, cell)
     except NoTariffRow as missing:
         return NoTariffError(
-            f"No tariff exists for {point.tso_name} {point.cleaned_name} on {missing.day.isoformat()}.")
+            f"No tariff exists for {point.tso_name} {point.cleaned_name} on {missing.day.isoformat()}.", missing.day)
 
     row = parts[0].row
     column = _price_cell(row, instrument, start)[0]
@@ -206,7 +208,7 @@ def calculate_bundle_fee(
         if isinstance(result, NoTariffError):
             side_text = "exit" if side.direction == "Exit" else "entry"
             return NoTariffError(f"No tariff exists for the {side.tso_name} {side_text} side "
-                                 f"({side.cleaned_name}) on {start.isoformat()}.")
+                                 f"({side.cleaned_name}) on {result.day.isoformat()}.", result.day)
         if isinstance(result, FeeError):
             return result
         results.append(result)
