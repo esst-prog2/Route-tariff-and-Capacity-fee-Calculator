@@ -51,6 +51,8 @@ TSOS: Mapping[str, tuple[str, str, str]] = {
 }
 TSO_NAMES: Mapping[str, str] = {code: name for code, (name, _, _) in TSOS.items()}
 TSO_FORMATS: Mapping[str, tuple[str, str]] = {code: (currency, unit) for code, (_, currency, unit) in TSOS.items()}
+# The energy one unit of each capacity unit carries per day, in kWh (so 1 kWh/h = 24 kWh/d).
+HOURS_PER_UNIT: Mapping[str, int] = {"kWh/h": 24, "kWh/d": 1}
 # Rows left out on purpose, without a warning: the pre-euro BGN and HRK tariffs.
 SKIPPED_CURRENCIES: Mapping[str, tuple[str, ...]] = {"BGTRGAZ": ("BGN",), "plinacr": ("HRK",)}
 

@@ -86,6 +86,8 @@ def format_whole(amount: int) -> str:
     return f"{amount:,}"
 
 
+EUR = "EUR"
+
 # Amounts are rounded and split in the currency's smallest shown unit: whole forints, else cents.
 CURRENCY_DECIMALS = {"HUF": 0, "EUR": 2, "RON": 2, "CZK": 2, "PLN": 2}
 
@@ -103,3 +105,21 @@ def format_amount(minor: int, currency: str) -> str:
     sign = "-" if minor < 0 else ""
     whole, rest = divmod(abs(minor), 10 ** places)
     return f"{sign}{whole:,}.{rest:0{places}d}"
+
+
+def rate_message(currency: str) -> str:
+    return f"The {currency} per EUR rate must be a positive number."
+
+
+def parse_fx_rate(text, currency: str = "HUF") -> tuple[Fraction | None, str | None]:
+    """A typed exchange rate (units of `currency` per 1 EUR): (rate, None) for a positive
+    number, (None, None) for a blank box, (None, message) for anything else."""
+    if text is None or not str(text).strip():
+        return None, None
+    try:
+        rate = parse_number(text)
+    except ValueError:
+        return None, rate_message(currency)
+    if rate <= 0:
+        return None, rate_message(currency)
+    return rate, None

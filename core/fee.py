@@ -14,9 +14,9 @@ from fractions import Fraction
 from typing import Mapping
 
 from . import periods
-from .money import CURRENCY_DECIMALS, parse_number, round_minor, split_by_weights
+from .money import CURRENCY_DECIMALS, EUR, parse_fx_rate, parse_number, round_minor, split_by_weights
 from .points import Bundle, Point
-from .tariffs import NoTariffRow, ProductPart, TariffTable
+from .tariffs import HOURS_PER_UNIT, NoTariffRow, ProductPart, TariffTable
 
 GAS_YEAR = "gas_year"
 QUARTER = "quarter"
@@ -26,8 +26,6 @@ INSTRUMENTS = (GAS_YEAR, QUARTER, MONTH, DAY)
 INSTRUMENT_LABELS = {GAS_YEAR: "Gas year", QUARTER: "Quarter", MONTH: "Month", DAY: "Day"}
 
 CAPACITY_MESSAGE = "Capacity must be a positive number (kWh/d)."
-HOURS_PER_DAY = 24
-EUR = "EUR"
 
 
 @dataclass(frozen=True)
@@ -164,7 +162,7 @@ def calculate_fee(
 
     row = parts[0].row
     column = _price_cell(row, instrument, start)[0]
-    capacity = capacity_kwh_d / HOURS_PER_DAY if row.unit == "kWh/h" else capacity_kwh_d
+    capacity = capacity_kwh_d / HOURS_PER_UNIT[row.unit]
     exact_total = capacity * price
     total = round_minor(exact_total, row.currency)
 
@@ -221,18 +219,13 @@ def bundle_eur_total(result: BundleFeeResult, rate_texts: Mapping[str, str]) -> 
     rates: dict[str, Fraction] = {}
     missing, invalid = [], []
     for currency in result.rate_currencies:
-        text = str(rate_texts.get(currency) or "").strip()
-        if not text:
-            missing.append(currency)
-            continue
-        try:
-            rate = parse_number(text)
-        except ValueError:
-            rate = Fraction(0)
-        if rate > 0:
-            rates[currency] = rate
-        else:
+        rate, message = parse_fx_rate(rate_texts.get(currency), currency)
+        if message:
             invalid.append(currency)
+        elif rate is None:
+            missing.append(currency)
+        else:
+            rates[currency] = rate
     if missing or invalid:
         return RatesNeeded(tuple(missing), tuple(invalid))
     total = sum(
