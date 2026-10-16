@@ -54,3 +54,28 @@ Done:
 - The 30-point list moved to `tests/helpers.py` as `KNOWN_POINTS`, so it is now an expectation that
   the rule must keep meeting (`test_known_points_keep_their_names_in_the_catalog`), not a patch. The
   test tables now name their rows like the real file does (`name (flow)`).
+
+## 3. The same job done twice
+
+Looked for functions, constants and blocks that do almost the same thing under different names,
+the kind of thing that appears when each change is written without seeing the rest.
+
+Found and merged (one copy kept each):
+- `dates_text` was defined in `app.py` and in `core/fee.py`, character for character. The app now
+  uses the one in `core/fee.py`.
+- **Exchange-rate parsing was written twice.** `core/route.py` had `parse_fx_rate` for tab 1, and
+  `bundle_eur_total` in `core/fee.py` parsed the tab 2 rate boxes with its own copy of the same
+  rules. Both now use `parse_fx_rate`, moved with `rate_message` to `core/money.py`.
+- `EUR = "EUR"` was defined in both `fee.py` and `route.py` (and `route.py` also compared with the
+  bare string). It now lives once in `core/money.py`.
+- **The kWh/h to kWh/d conversion was written twice.** `route.py` had `HOURS_PER_UNIT`, and `fee.py`
+  had `HOURS_PER_DAY = 24` with its own `if unit == "kWh/h" ... else` (which also treated any other
+  unit as kWh/d without saying so). `HOURS_PER_UNIT` now sits next to the TSO table in
+  `core/tariffs.py`, and both use it.
+- The "at 1 EUR = 400 HUF" caption text was built twice in `app.py`; now `rates_text`.
+
+Found and left:
+- Choosing the price cell for a product is done in `fee._price_cell` (tab 2's instruments: gas
+  year, quarter, month, day) and `route._segment_cell` (the optimiser's products: yearly,
+  quarterly, monthly). They are short and each follows its own tab's vocabulary, which the specs
+  and the UI labels use; merging them would mean a third set of names.

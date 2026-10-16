@@ -11,8 +11,9 @@ from core import money, points
 from core.optimizer import DAILY, MONTHLY, QUARTERLY, Plan
 from core.points import BULGARTRANSGAZ, FGSZ, GASTRANS
 from core.route import (
-    RouteError, RouteResult, TsoLeg, TsoOracle, calculate_route, parse_fx_rate, point_tariff, point_tariff_used,
+    RouteError, RouteResult, TsoLeg, TsoOracle, calculate_route, point_tariff, point_tariff_used,
 )
+from core.money import parse_fx_rate
 from core.tariffs import load_tariffs
 
 from .helpers import KNOWN_POINTS, KIREEVO, KISKUNDOROZSMA_2, corridor, corridor_points, make_row, make_table
