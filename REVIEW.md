@@ -174,3 +174,32 @@ Found and removed:
 
 The tests that read the removed fields now check the same facts through what the app really uses
 (`point_tariff_used`, `TsoOracle.sources`, the plan's total).
+
+## 8. What should not be in git
+
+Listed every file ever added in the whole history (not only the current tree), the largest blobs,
+and searched every diff for keys, tokens and passwords.
+
+Found:
+- **`DM_Tariff_capacity_fee_20260924123613.xlsx` is still in the history.** It was uploaded in
+  `3228832` and removed with a plain delete in `7b45d52`, so it can still be checked out. Opened it:
+  it is the tariff export (749 rows of public TSO tariffs plus a `Creation_date` column), without the
+  author and comment columns of the raw work export that lives in the ignored `data/private/`. The
+  only personal detail is the Excel file property "last modified by" with my own name, which is also
+  in `data/sample/tariffs_sample.xlsx` and in the commit authors anyway. Nothing about colleagues,
+  no comments, no e-mail addresses.
+- `data/real/tariffs_real.xlsx` (192 KB): public tariffs, published with my employer's permission
+  (see README), no author in its properties. `data/sample/tariffs_sample.xlsx` (297 KB) has the same
+  structure with made-up prices (about 1 % of its prices equal the real ones).
+  `data/map/countries.geojson` (68 KB) is public-domain Natural Earth data. No file in the history
+  is over 300 KB.
+- No `.env`, key, token or password anywhere in the history.
+- `.gitignore` already kept out `data/private/`, other `.xlsx` files, caches and virtual
+  environments, but nothing stopped secrets: a `.env`, Streamlit's `secrets.toml` (where an API key
+  for a later live data feed would go) or Claude Code's per-machine `settings.local.json`.
+
+Done:
+- Added `.env`, `.streamlit/secrets.toml` and `.claude/settings.local.json` to `.gitignore`.
+- Decided **not** to rewrite the history to remove the old export: it holds nothing that is not
+  public or already in the repository, and rewriting `main` with `git filter-repo` would break every
+  existing clone of the shared repository.
