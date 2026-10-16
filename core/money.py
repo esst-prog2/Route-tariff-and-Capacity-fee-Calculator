@@ -111,7 +111,7 @@ def rate_message(currency: str) -> str:
     return f"The {currency} per EUR rate must be a positive number."
 
 
-def parse_fx_rate(text, currency: str = "HUF") -> tuple[Fraction | None, str | None]:
+def parse_fx_rate(text, currency: str) -> tuple[Fraction | None, str | None]:
     """A typed exchange rate (units of `currency` per 1 EUR): (rate, None) for a positive
     number, (None, None) for a blank box, (None, message) for anything else."""
     if text is None or not str(text).strip():

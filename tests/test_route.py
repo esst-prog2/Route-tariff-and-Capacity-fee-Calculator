@@ -269,7 +269,7 @@ def test_over_booked_days_are_not_counted():
     ("0", None, True), ("-3", None, True), ("abc", None, True), ("1/2", None, True), ("nan", None, True),
 ])
 def test_fx_rate_parsing(text, rate, has_message):
-    parsed, message = parse_fx_rate(text)
+    parsed, message = parse_fx_rate(text, "HUF")
     assert parsed == rate
     assert (message is not None) == has_message
 

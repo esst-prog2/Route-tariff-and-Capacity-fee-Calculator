@@ -29,7 +29,7 @@ TAG = "TAG"
 
 
 def tso_name(tso: str) -> str:
-    return TSO_NAMES.get(tso, tso)
+    return TSO_NAMES[tso]
 
 
 @dataclass(frozen=True)
