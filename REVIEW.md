@@ -203,3 +203,48 @@ Done:
 - Decided **not** to rewrite the history to remove the old export: it holds nothing that is not
   public or already in the repository, and rewriting `main` with `git filter-repo` would break every
   existing clone of the shared repository.
+
+## 9. Tests whose expected values were copied from the code
+
+A test only says something if its expected value was decided without running the code. Went
+through the tests for numbers with no derivation next to them.
+
+Found:
+- Most tests already follow the rule: the core rules are tested on small hand-made tables with
+  round numbers (`tests/helpers.py`), and the spec scenarios they check give the arithmetic
+  (e.g. 2083.333... x 751.255428 = 1,565,115.48). The homework 5 test reads its expected value from
+  two cells read by hand in Excel.
+- **`test_readme_demo_figures` was a snapshot.** It asserted eight route figures on the synthetic
+  sample (0.5253, 2.8863, 19.3900, 4.4391, 1519.2871, 347.8221, 0.8696, 8.1949) with no derivation,
+  and said it guarded "the numbers quoted in README.md section 1", but the README has quoted the real
+  file's figures since homework 5. So it guarded nothing and would have accepted any change that kept
+  today's output.
+- **Two README figures had no test at all**: the over-booking route (3.6415 EUR/MWh) and the
+  Świnoujście LNG entry (11,703.78 PLN).
+
+Done:
+- Read the sample's cells by hand and rewrote the snapshot as
+  `test_sample_route_figures_worked_out_by_hand` and `test_sample_capacity_fees_worked_out_by_hand`:
+  the expected totals are written as the sum of those cells (with the reason Gastrans books three
+  months instead of Q1: 9.21 < 9.93), and the route's EUR/MWh as the formula over them; the test
+  compares exact fractions, not rounded text.
+- Added `test_readme_over_booking_route_worked_out_by_hand` (0.1211087 / 90 x 1000 +
+  4.02 / 2160 x 1000 + 375.627714 / 2160 x 1000 / 400 = 3.641518) and
+  `test_readme_lng_entry_worked_out_by_hand` (50,000 / 24 x 5.6178144 = 11,703.78 exactly), both on
+  the real file.
+- The new expected values matched the program to the last digit; no bug was hiding behind the
+  snapshot.
+
+## Summary
+
+| Review | Found | Changed |
+|---|---|---|
+| 1. Code against the spec | wrong day in the bundle "no tariff" message, stale docstring | fixed, 1 test |
+| 2. Patched instead of fixed | two override layers for point names | one naming rule, catalog unchanged |
+| 3. Duplicates | 5 helpers or constants written twice | one copy each |
+| 4. Errors that disappear | a `pass` hiding bugs, points dropped without a word | explicit checks, sidebar note, 3 tests |
+| 5. Quiet defaults | HUF/kWh/h/Firm defaults, rate fallbacks, unmarked map points, first-sheet fallback | required values or a message, 2 tests |
+| 6. Dependencies | nothing pinned, `altair` missing | exact pins |
+| 7. Dead code | tariff text and all-daily figures nobody shows, a broken spike script | removed |
+| 8. Not in git | an old export in the history (harmless), no secret ignores | `.gitignore` extended |
+| 9. Copied test values | a README snapshot guarding nothing, 2 README figures untested | 4 hand-worked tests |
