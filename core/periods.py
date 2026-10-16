@@ -70,10 +70,6 @@ def gas_year_label(start_year: int) -> str:
     return f"{start_year}/{str(start_year + 1)[-2:]}"
 
 
-def quarter_label(year: int, quarter: int) -> str:
-    return f"{year} Q{quarter}"
-
-
 def days_in_period(start: date, end: date) -> int:
     """Number of calendar days, both dates inclusive."""
     return (end - start).days + 1

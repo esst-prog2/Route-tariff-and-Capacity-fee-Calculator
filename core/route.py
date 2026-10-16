@@ -91,9 +91,6 @@ class TsoOracle:
                 sources.append(text)
         return ", ".join(sources)
 
-    def tariff_used(self, first: date, last: date) -> str:
-        return "; ".join(f"{point.direction.lower()} {self.sources(point, first, last)}" for point in self._points)
-
 
 def segment_price(oracle: TsoOracle, segment: Segment) -> Fraction:
     """The oracle's price for the product a segment books (used to cost one
@@ -176,16 +173,8 @@ class TsoLeg:
         return self._per_mwh(self.plan.total)
 
     @property
-    def all_daily_per_mwh(self) -> Fraction:
-        return self._per_mwh(self.plan.all_daily_total)
-
-    @property
     def eur_per_mwh(self) -> Fraction | None:
         return self._to_eur(self.per_mwh)
-
-    @property
-    def all_daily_eur_per_mwh(self) -> Fraction | None:
-        return self._to_eur(self.all_daily_per_mwh)
 
     @property
     def point_eur_per_mwh(self) -> tuple[Fraction | None, ...]:
@@ -236,16 +225,6 @@ class RouteResult:
     @property
     def eur_per_mwh(self) -> Fraction | None:
         return self._sum(leg.eur_per_mwh for leg in self.legs)
-
-    @property
-    def all_daily_eur_per_mwh(self) -> Fraction | None:
-        return self._sum(leg.all_daily_eur_per_mwh for leg in self.legs)
-
-    @property
-    def saving_eur_per_mwh(self) -> Fraction | None:
-        if self.eur_per_mwh is None:
-            return None
-        return self.all_daily_eur_per_mwh - self.eur_per_mwh
 
     @property
     def has_comparison(self) -> bool:

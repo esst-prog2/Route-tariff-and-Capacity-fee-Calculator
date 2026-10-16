@@ -7,9 +7,9 @@ from itertools import product
 
 import pytest
 
-from core import fee, money, points
+from core import fee, money
 from core.optimizer import MONTHLY, QUARTERLY, optimize
-from core.route import RouteError, RouteResult, TsoOracle, calculate_route
+from core.route import RouteError, RouteResult, TsoOracle, calculate_route, point_tariff_used
 from core.tariffs import DEFAULT_SAMPLE_PATH, load_tariffs
 
 from .helpers import KNOWN_POINTS, KISKUNDOROZSMA_2, corridor, corridor_points, make_row, make_table
@@ -80,8 +80,9 @@ def test_period_crossing_the_gas_year_boundary_uses_old_then_new_tariff(sample):
         old, new = l.plan.segments
         assert (old.start, old.end, new.start, new.end) == (
             date(2026, 9, 20), date(2026, 9, 30), date(2026, 10, 1), date(2026, 10, 10))
-        assert "from 2026-10-01" not in old.tariff_used
-        assert new.tariff_used.count("from 2026-10-01 (open-ended)") == len(l.points)
+        for p in l.points:
+            assert "from 2026-10-01" not in point_tariff_used(sample, p, old)
+            assert point_tariff_used(sample, p, new) == "from 2026-10-01 (open-ended)"
         old_rows = [sample.find_row(*p.key, date(2026, 9, 30)) for p in l.points]
         new_rows = [sample.find_row(*p.key, date(2026, 10, 1)) for p in l.points]
         assert old.price == 11 * sum(r.day_price(9) for r in old_rows)
@@ -94,7 +95,8 @@ def test_open_ended_row_prices_dates_years_after_it_starts(sample):
     assert isinstance(result, RouteResult)
     for l in result.legs:
         assert l.plan.segments[0].product == MONTHLY
-        assert "from 2026-10-01 (open-ended)" in l.plan.segments[0].tariff_used
+        for p in l.points:
+            assert "from 2026-10-01 (open-ended)" in point_tariff_used(sample, p, l.plan.segments[0])
     start, end = fee.resolve_period(fee.GAS_YEAR, gas_year=2035)
     for p in KNOWN_POINTS:
         assert isinstance(fee.calculate_fee(sample, p, fee.GAS_YEAR, start, end, "50000"), fee.FeeResult), p
@@ -133,8 +135,6 @@ def test_readme_demo_figures(sample):
     assert (fmt(gastrans.plan.total), fmt(gastrans.eur_per_mwh)) == ("19.3900", "4.4391")
     assert (fmt(fgsz.plan.total), fmt(fgsz.per_mwh), fmt(fgsz.eur_per_mwh)) == ("1519.2871", "347.8221", "0.8696")
     assert fmt(route.eur_per_mwh) == "8.1949"
-    assert fmt(route.all_daily_eur_per_mwh) == "14.0247"
-    assert fmt(route.saving_eur_per_mwh) == "5.8297"
 
     over = calculate_route(sample, *corridor("BG", "HU"), date(2026, 10, 2), date(2026, 12, 30), {"HUF": "400"})
     assert all(l.plan.days_outside == 2 for l in over.legs)

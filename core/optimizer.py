@@ -35,10 +35,6 @@ class PriceOracle(Protocol):
         """The gas year starting on 1 October of `gas_year`."""
         ...
 
-    def tariff_used(self, first: date, last: date) -> str:
-        """Describe the tariff rows behind the prices on days first..last."""
-        ...
-
 
 class PriceUnavailable(Exception):
     """Raised by an oracle when no tariff applies on a day of a product."""
@@ -50,7 +46,6 @@ class Segment:
     end: date
     product: str
     price: Fraction
-    tariff_used: str
 
     def days_outside(self, start: date, end: date) -> int:
         """Days this product covers outside the requested period [start, end]."""
@@ -64,7 +59,6 @@ class Plan:
     end: date
     segments: tuple[Segment, ...]
     total: Fraction
-    all_daily_total: Fraction
 
     @property
     def days(self) -> int:
@@ -74,10 +68,6 @@ class Plan:
     def days_outside(self) -> int:
         """Over-booked days: paid for but outside the requested period."""
         return sum(seg.days_outside(self.start, self.end) for seg in self.segments)
-
-    @property
-    def saving(self) -> Fraction:
-        return self.all_daily_total - self.total
 
 
 def optimize(start: date, end: date, oracle: PriceOracle, longest: str = YEARLY) -> Plan:
@@ -101,10 +91,8 @@ def optimize(start: date, end: date, oracle: PriceOracle, longest: str = YEARLY)
     slices = periods.month_slices(start, end)
 
     month_choice: dict[tuple[int, int], tuple[str, Fraction]] = {}
-    all_daily_total = Fraction(0)
     for s in slices:
         daily_sum = sum((oracle.day_price(d) for d in periods.iter_days(s.first, s.last)), Fraction(0))
-        all_daily_total += daily_sum
         monthly = _optional_price(lambda: oracle.month_price(s.year, s.month)) if MONTHLY in allowed else None
         month_choice[(s.year, s.month)] = (
             (MONTHLY, monthly) if monthly is not None and monthly <= daily_sum else (DAILY, daily_sum)
@@ -142,26 +130,24 @@ def optimize(start: date, end: date, oracle: PriceOracle, longest: str = YEARLY)
             if gas_year not in emitted_years:
                 emitted_years.add(gas_year)
                 first, last = periods.gas_year_period(gas_year)
-                segments.append(Segment(first, last, YEARLY, year_price[gas_year], oracle.tariff_used(first, last)))
+                segments.append(Segment(first, last, YEARLY, year_price[gas_year]))
             continue
         quarter_key = (s.year, periods.quarter_of_month(s.month))
         if quarter_key in quarter_price:
             if quarter_key not in emitted_quarters:
                 emitted_quarters.add(quarter_key)
                 first, last = periods.quarter_period(*quarter_key)
-                segments.append(
-                    Segment(first, last, QUARTERLY, quarter_price[quarter_key], oracle.tariff_used(first, last))
-                )
+                segments.append(Segment(first, last, QUARTERLY, quarter_price[quarter_key]))
             continue
         product, price = month_choice[(s.year, s.month)]
         if product == MONTHLY:
             first, last = periods.month_first(s.year, s.month), periods.month_last(s.year, s.month)
-            segments.append(Segment(first, last, MONTHLY, price, oracle.tariff_used(first, last)))
+            segments.append(Segment(first, last, MONTHLY, price))
         else:
-            segments.append(Segment(s.first, s.last, DAILY, price, oracle.tariff_used(s.first, s.last)))
+            segments.append(Segment(s.first, s.last, DAILY, price))
 
     total = sum((seg.price for seg in segments), Fraction(0))
-    return Plan(start, end, tuple(segments), total, all_daily_total)
+    return Plan(start, end, tuple(segments), total)
 
 
 def _optional_price(get_price) -> Fraction | None:

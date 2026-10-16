@@ -23,9 +23,6 @@ class FakeOracle:
     def year_price(self, gas_year):
         return Fraction(10**9)
 
-    def tariff_used(self, first, last):
-        return f"{first}..{last}"
-
 
 def shape(plan):
     return [(s.start, s.end, s.product) for s in plan.segments]
@@ -39,7 +36,6 @@ def test_partial_edge_months_are_priced_daily_when_daily_is_cheaper():
     ]
     assert plan.days == 42
     assert plan.total == 4 * 42
-    assert plan.saving == 0
     assert plan.days_outside == 0
 
 
@@ -53,7 +49,6 @@ def test_partial_edge_months_over_book_when_the_monthly_product_is_cheaper():
     assert plan.total == 100 + 60
     assert plan.days == 42
     assert plan.days_outside == 4
-    assert plan.all_daily_total == 4 * 42
 
 
 def test_partial_month_ties_prefer_the_monthly_product():
@@ -68,9 +63,7 @@ def test_full_month_between_partials_is_monthly_when_cheaper():
         (date(2026, 12, 1), date(2026, 12, 31), MONTHLY),
         (date(2027, 1, 1), date(2027, 1, 15), DAILY),
     ]
-    assert plan.total == 16 * 4 + 100 + 15 * 4
-    assert plan.all_daily_total == 62 * 4
-    assert plan.saving == 62 * 4 - plan.total == 24
+    assert plan.total == 16 * 4 + 100 + 15 * 4  # 24 less than the 62 days bought daily
 
 
 def test_full_month_is_daily_when_daily_is_cheaper():
@@ -172,7 +165,7 @@ def test_single_day():
 def test_leap_february_is_a_full_29_day_month():
     plan = optimize(date(2028, 2, 1), date(2028, 2, 29), FakeOracle(day=4, month=100))
     assert [s.product for s in plan.segments] == [MONTHLY]
-    assert plan.all_daily_total == 29 * 4
+    assert plan.segments[0].end == date(2028, 2, 29)
 
 
 def test_segments_add_up_to_the_total_and_cover_the_period_without_gaps():
@@ -186,7 +179,7 @@ def test_segments_add_up_to_the_total_and_cover_the_period_without_gaps():
 def test_over_booking_is_never_dearer_than_exact_cover():
     # Exact cover here: Dec 5-31 daily (108) + January daily (60) = 168.
     plan = optimize(date(2026, 12, 5), date(2027, 1, 15), FakeOracle(day=4, month=100))
-    assert plan.total <= plan.all_daily_total
+    assert plan.total <= 4 * 42  # every requested day bought daily
     assert plan.total < 168
 
 
@@ -222,4 +215,4 @@ def test_without_quarterly_products_the_months_are_used_and_may_over_book():
 def test_daily_only_prices_every_requested_day():
     oracle = FakeOracle(day=4, month=100, quarter={(2026, 4): 250})
     plan = optimize(date(2026, 10, 1), date(2026, 12, 31), oracle, longest=DAILY)
-    assert products(plan) == {DAILY} and plan.total == 92 * 4 == plan.all_daily_total
+    assert products(plan) == {DAILY} and plan.total == 92 * 4

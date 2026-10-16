@@ -151,3 +151,26 @@ Found:
 
 Done: `requirements.txt` pins the exact versions the 352 tests pass with and lists `altair`, with a
 note on what each is for.
+
+## 7. Dead code
+
+Counted, for every public function, method, field and constant, where it is used: in `app.py`, in
+`core/`, or only in the tests. Code that only tests read is still code nobody runs.
+
+Found and removed:
+- **`Segment.tariff_used`, `PriceOracle.tariff_used` and `TsoOracle.tariff_used`.** The optimiser
+  wrote a "tariff used" text into every product it chose, by looking up the row of every day, but
+  nothing shows it: tab 1's Details table builds its own text per point with `point_tariff_used`.
+  So every route calculation did that lookup for nothing.
+- **The all-daily baseline and its saving** (`Plan.all_daily_total`, `Plan.saving`,
+  `TsoLeg.all_daily_per_mwh` / `all_daily_eur_per_mwh`, `RouteResult.all_daily_eur_per_mwh` /
+  `saving_eur_per_mwh`). They are left over from before the "next shorter products" comparison; the
+  spec now says the tab shows no all-daily figure and no saving against all-daily products.
+- `periods.quarter_label`: never called.
+- **`spikes/spike_overbooking.py`.** A throwaway script from homework 4 that imports `entries`,
+  `exits` and `RouteOracle`, none of which exist any more, so it cannot even start. Its result is in
+  the planning log and the script itself stays in the git history (commit `cdece32`).
+- Unused imports of `core.points` in three test files.
+
+The tests that read the removed fields now check the same facts through what the app really uses
+(`point_tariff_used`, `TsoOracle.sources`, the plan's total).
