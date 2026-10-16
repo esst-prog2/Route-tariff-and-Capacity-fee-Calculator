@@ -8,9 +8,9 @@ from core.fee import (DAY, GAS_YEAR, MONTH, QUARTER, FeeError, FeeResult,
                       calculate_fee, resolve_period)
 from core.tariffs import DEFAULT_SAMPLE_PATH, load_tariffs
 
-from .helpers import make_row, make_table
+from .helpers import KNOWN_POINTS, make_row, make_table
 
-POINT = next(p for p in points.POINTS if p.key == ("FGSZ", "21Z000000000505P", "Entry"))
+POINT = next(p for p in KNOWN_POINTS if p.key == ("FGSZ", "21Z000000000505P", "Entry"))
 
 
 def table_with(prices, valid_from="2026-10-01", valid_to=None):
@@ -168,8 +168,8 @@ def test_year_lists_start_at_todays_gas_year_when_the_point_has_no_rows():
 
 # --- Gastrans and Bulgartransgaz: own unit, own currency, cents ---------------------------------------
 
-GASTRANS_POINT = next(p for p in points.POINTS if p.key == ("Gastran", "21Z000000000505P", "Exit"))
-BG_POINT = next(p for p in points.POINTS if p.key == ("BGTRGAZ", "58Z-000000007-KZ", "Exit"))
+GASTRANS_POINT = next(p for p in KNOWN_POINTS if p.key == ("Gastran", "21Z000000000505P", "Exit"))
+BG_POINT = next(p for p in KNOWN_POINTS if p.key == ("BGTRGAZ", "58Z-000000007-KZ", "Exit"))
 
 
 def test_gastrans_quarter_in_eur_per_kwh_h():
@@ -205,7 +205,7 @@ def test_sample_figures_for_the_new_tsos():
 
 
 def test_interruptible_point_reports_its_capacity_type():
-    point = next(p for p in points.POINTS if p.key == ("Gastran", "58Z-000000007-KZ", "Exit"))
+    point = next(p for p in KNOWN_POINTS if p.key == ("Gastran", "58Z-000000007-KZ", "Exit"))
     table = make_table(make_row(eic=point.eic, direction="Exit", operator="Gastran", currency="EUR", capacity="Interruptible"))
     result = calculate_fee(table, point, DAY, date(2026, 1, 5), date(2026, 1, 5), "24")
     assert result.capacity_type == "Interruptible"

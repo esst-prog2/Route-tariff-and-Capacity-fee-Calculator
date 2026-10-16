@@ -25,3 +25,32 @@ Done:
   `test_bundle_side_whose_tariff_ends_inside_the_period_names_the_first_day_without_one` (red before
   the fix, green after).
 - Docstring corrected.
+
+## 2. Rules patched where they broke instead of where they are wrong
+
+Read the commit history (52 commits) and the rule-heavy code for fix-on-fix chains: a rule that was
+wrong once and then got an exception added for every case that hit it.
+
+Found:
+- The history itself has no "fix ... fix again" chains: every change of a rule (over-booking, the gas
+  year product, part-by-part pricing, the map instead of the corridor) went through an OpenSpec change
+  that replaced the rule in one place (`TariffTable.product_price` serves both tabs).
+- **Point names had two override layers on top of the cleaning rule.** `build_catalog` took a point's
+  name from the hand-written `POINTS` list (30 points from the FGSZ-only first version), else from
+  `FLOW_OVERRIDES`, else from `EIC_NAMES`, else from the cleaning rule; and a name in `POINTS` also
+  won over the other TSO's side of the same EIC. When the catalog was added, the old list was kept
+  as a patch instead of folded into the rule. Checked: on both tariff files the rule already gives
+  24 of the 30 names and every flow; the other 6 belong to 4 EICs (Beregdaróc, Balassagyarmat,
+  Strandzha 1/Malkoclar, Negru Voda 1/Kardam), and `EIC_NAMES` is exactly the place for those.
+- The list was also quietly naming points in the tests' hand-made tables, whose rows were all called
+  "Test point" (no flow), so those tests only worked through the patch.
+
+Done:
+- The 4 names moved into `EIC_NAMES`; `POINTS` and its two lookups are gone from `build_catalog`. The
+  rule is now: name = `EIC_NAMES`, else the most common cleaned name of the EIC; flow =
+  `FLOW_OVERRIDES`, else the cleaning rule.
+- Checked by comparing the full catalog and network (109 single sides, 14 LNG entries, 43 bundles,
+  22 map points) before and after on the real and the sample file: identical.
+- The 30-point list moved to `tests/helpers.py` as `KNOWN_POINTS`, so it is now an expectation that
+  the rule must keep meeting (`test_known_points_keep_their_names_in_the_catalog`), not a patch. The
+  test tables now name their rows like the real file does (`name (flow)`).

@@ -89,41 +89,6 @@ class Bundle:
         return f"{self.name} {self.flow} ({self.exit.tso_name} + {self.entry.tso_name})"
 
 
-# Points the app knew before the catalog was built from the data. Their names are fixed here
-# (they win over the cleaning rule, also for the other TSO's side of the same EIC).
-POINTS: tuple[Point, ...] = (
-    Point(FGSZ, "Mosonmagyaróvár", "AT>HU", "21Z000000000003C", ENTRY),
-    Point(FGSZ, "Beregdaróc", "UA>HU", "21Z000000000139O", ENTRY),
-    Point(FGSZ, "Csanádpalota", "RO>HU", "21Z000000000236Q", ENTRY),
-    Point(FGSZ, "Drávaszerdahely", "CR>HU", "21Z000000000249H", ENTRY),
-    Point(FGSZ, "Balassagyarmat", "SK>HU", "21Z000000000358C", ENTRY),
-    Point(FGSZ, "Kiskundorozsma 2", "RS>HU", "21Z000000000505P", ENTRY),
-    Point(FGSZ, "VIP Bereg", "UA>HU", "21Z000000000507L", ENTRY),
-    Point(FGSZ, "Balassagyarmat", "HU>SK", "21Z000000000358C", EXIT),
-    Point(FGSZ, "Csanádpalota", "HU>RO", "21Z000000000236Q", EXIT),
-    Point(FGSZ, "Drávaszerdahely", "HU>CR", "21Z000000000249H", EXIT),
-    Point(FGSZ, "Kiskundorozsma", "HU>RS", "21Z000000000154S", EXIT),
-    Point(FGSZ, "Kiskundorozsma 2", "HU>RS", "21Z000000000505P", EXIT),
-    Point(FGSZ, "VIP Bereg", "HU>UA", "21Z000000000507L", EXIT),
-    Point(GASTRANS, "Kireevo/Zaychar", "BG>RS", "58Z-000000007-KZ", ENTRY),
-    Point(GASTRANS, "Kiskundorozsma 2", "HU>RS", "21Z000000000505P", ENTRY),
-    Point(GASTRANS, "Kiskundorozsma 2", "RS>HU", "21Z000000000505P", EXIT),
-    Point(GASTRANS, "Kireevo/Zaychar", "RS>BG", "58Z-000000007-KZ", EXIT),
-    Point(BULGARTRANSGAZ, "Kireevo/Zaychar", "RS>BG", "58Z-000000007-KZ", ENTRY),
-    Point(BULGARTRANSGAZ, "Kulata/Sidirokastron", "GR>BG", "21Z000000000020C", ENTRY),
-    Point(BULGARTRANSGAZ, "Strandzha 1/Malkoclar", "TR>BG", "21Z000000000157M", ENTRY),
-    Point(BULGARTRANSGAZ, "Negru Voda 1/Kardam", "RO>BG", "21Z000000000159I", ENTRY),
-    Point(BULGARTRANSGAZ, "Ruse/Giurgiu", "RO>BG", "21Z0000000002798", ENTRY),
-    Point(BULGARTRANSGAZ, "Strandzha 2/Malkoclar", "TR>BG", "58Z-00000015-S2M", ENTRY),
-    Point(BULGARTRANSGAZ, "Stara Zagora", "ICGB>BG", "58Z-IP-00034-STZ", ENTRY),
-    Point(BULGARTRANSGAZ, "Kireevo/Zaychar", "BG>RS", "58Z-000000007-KZ", EXIT),
-    Point(BULGARTRANSGAZ, "Kulata/Sidirokastron", "BG>GR", "21Z000000000020C", EXIT),
-    Point(BULGARTRANSGAZ, "Kyustendil/Zidilovo", "BG>MK", "21Z000000000137S", EXIT),
-    Point(BULGARTRANSGAZ, "Strandzha 1/Malkoclar", "BG>TR", "21Z000000000157M", EXIT),
-    Point(BULGARTRANSGAZ, "Negru Voda 1/Kardam", "BG>RO", "21Z000000000159I", EXIT),
-    Point(BULGARTRANSGAZ, "Ruse/Giurgiu", "BG>RO", "21Z0000000002798", EXIT),
-)
-
 # --- the catalog built from the tariff rows (tab 2) ------------------------------------------
 
 # Storage, production and domestic points, and the Baumgarten points other than WAG.
@@ -139,8 +104,13 @@ EXCLUDED: frozenset[tuple[str, str]] = frozenset({
     (TAG, "21Z000000000164P"),  # Baumgarten (TAG)
 })
 
-# Names (per EIC) and flows the cleaning rule cannot produce, and spellings fixed by hand.
+# Names (per EIC) and flows the cleaning rule cannot produce, and spellings fixed by hand. A name here
+# is used for every TSO's side of that EIC.
 EIC_NAMES: dict[str, str] = {
+    "21Z000000000139O": "Beregdaróc",  # source "Beregdaróc 1400"
+    "21Z000000000358C": "Balassagyarmat",  # source "Balassagyarmat/Velké Zlievce"
+    "21Z000000000157M": "Strandzha 1/Malkoclar",  # source "Strandzha1/Malkoclar"
+    "21Z000000000159I": "Negru Voda 1/Kardam",  # source "Negru Voda 1 (RO)/Kardam (BG)"
     "21Z000000000239K": "Cieszyn",
     "21Z0019743987060": "VIP TTF-THE-H",
     "21Z0000000002212": "Gate Terminal",
@@ -210,42 +180,29 @@ class Catalog:
 
 def build_catalog(table: TariffTable) -> Catalog:
     """Every usable point of the loaded rows, as single sides, LNG entries and bundles."""
-    known = {p.key: p for p in POINTS}
     cleaned: dict[tuple[str, str, str], tuple[str, str]] = {}
     for key in table.keys():
         tso, eic, _ = key
         if (tso, eic) in EXCLUDED:
             continue
-        if key in known:
-            cleaned[key] = (known[key].name, known[key].flow)
-        elif key in FLOW_OVERRIDES:
-            cleaned[key] = FLOW_OVERRIDES[key]
-        else:
-            result = clean_name(table.network_point(*key))
-            if result is not None:
-                cleaned[key] = result
+        result = FLOW_OVERRIDES.get(key) or clean_name(table.network_point(*key))
+        if result is not None:
+            cleaned[key] = result
 
-    # One name per EIC, so both sides of a border read the same: a fixed name, else the most
+    # One name per EIC, so both sides of a border read the same: the fixed name, else the most
     # common cleaned one (the spelling with diacritics wins a tie).
-    names: dict[str, str] = {}
     by_eic: dict[str, list[str]] = {}
     for (tso, eic, direction), (name, _) in cleaned.items():
         by_eic.setdefault(eic, []).append(name)
+    names: dict[str, str] = {}
     for eic, candidates in by_eic.items():
-        fixed = [p.name for p in POINTS if p.eic == eic]
-        if eic in EIC_NAMES:
-            names[eic] = EIC_NAMES[eic]
-        elif fixed:
-            names[eic] = Counter(fixed).most_common(1)[0][0]
-        else:
-            counts = Counter(candidates)
-            names[eic] = max(counts, key=lambda n: (counts[n], _non_ascii(n), n))
+        counts = Counter(candidates)
+        names[eic] = EIC_NAMES.get(eic) or max(counts, key=lambda n: (counts[n], _non_ascii(n), n))
 
     points: dict[tuple[str, str, str], Point] = {}
     for key, (name, flow) in cleaned.items():
         tso, eic, direction = key
-        fixed = known.get(key)
-        points[key] = fixed or Point(tso, names[eic] if key not in FLOW_OVERRIDES else name, flow, eic, direction)
+        points[key] = Point(tso, name if key in FLOW_OVERRIDES else names[eic], flow, eic, direction)
 
     capacity_types = {key: table.capacity_type(*key) for key in points}
     order = lambda p: (tso_name(p.tso).casefold(), p.direction != ENTRY, p.name.casefold(), p.flow)
