@@ -1,4 +1,6 @@
-streamlit>=1.50
-pandas>=2.2
-openpyxl>=3.1
-pytest>=8.0
+# Exact versions the test suite passes with; upgrade on purpose, then rerun `python -m pytest`.
+streamlit==1.64.0
+altair==6.3.0  # imported by app.py for the route map (also a Streamlit dependency)
+pandas==3.0.2
+openpyxl==3.1.5  # pandas reads the .xlsx tariff files with it
+pytest==9.1.1  # tests only

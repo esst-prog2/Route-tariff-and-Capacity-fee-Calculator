@@ -132,3 +132,22 @@ Found and fixed:
 Checked and kept: the route defaults to an empty route when the file lacks the default points (the
 tab then asks for the first point), and `resolve_tariff_path` falls back to the committed real file
 when the variable is unset, as the spec says.
+
+## 6. Dependencies
+
+Checked every third-party import against `requirements.txt`, whether each package really exists
+under that name, whether it is used, and whether its version is pinned.
+
+Found:
+- All four listed packages (`streamlit`, `pandas`, `openpyxl`, `pytest`) exist on PyPI under exactly
+  these names and are the well-known projects, not look-alikes; each is used (`openpyxl` only
+  indirectly, as the engine pandas reads `.xlsx` files with).
+- **Nothing was pinned** (`streamlit>=1.50` and so on), so the hosted app installs whatever is newest
+  at each redeploy, not what the tests ran with. PyPI already has Streamlit 1.66 and pandas 3.0.6,
+  while the suite was run with 1.64.0 and 3.0.2.
+- **`altair` is imported directly** by `app.py` (the route map) but was not listed; it only arrived as
+  a dependency of Streamlit.
+- No package is imported without being needed, and the standard library covers the rest.
+
+Done: `requirements.txt` pins the exact versions the 352 tests pass with and lists `altair`, with a
+note on what each is for.
