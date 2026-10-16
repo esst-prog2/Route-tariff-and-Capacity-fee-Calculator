@@ -15,18 +15,12 @@ from fractions import Fraction
 from typing import Mapping
 
 from . import periods, points
-from .money import parse_number
+from .money import EUR, parse_fx_rate
 from .optimizer import DAILY, MONTHLY, PRODUCTS, QUARTERLY, YEARLY, Plan, PriceUnavailable, Segment, optimize
 from .points import Point
-from .tariffs import TSO_FORMATS, NoTariffRow, TariffRow, TariffTable
+from .tariffs import HOURS_PER_UNIT, TSO_FORMATS, NoTariffRow, TariffRow, TariffTable
 
-EUR = "EUR"
 FIRST_POINT_MESSAGE = "Choose the first border point of the route on the map or in the Next point list."
-
-
-def rate_message(currency: str) -> str:
-    return f"The {currency} per EUR rate must be a positive number."
-HOURS_PER_UNIT = {"kWh/h": 24, "kWh/d": 1}  # energy one unit of capacity carries per day, in kWh
 
 
 @dataclass(frozen=True)
@@ -96,9 +90,6 @@ class TsoOracle:
             if text not in sources:
                 sources.append(text)
         return ", ".join(sources)
-
-    def tariff_used(self, first: date, last: date) -> str:
-        return "; ".join(f"{point.direction.lower()} {self.sources(point, first, last)}" for point in self._points)
 
 
 def segment_price(oracle: TsoOracle, segment: Segment) -> Fraction:
@@ -173,7 +164,7 @@ class TsoLeg:
         return cost / (HOURS_PER_UNIT[self.unit] * self.plan.days) * 1000
 
     def _to_eur(self, value: Fraction) -> Fraction | None:
-        if self.currency == "EUR":
+        if self.currency == EUR:
             return value
         return None if self.fx_rate is None else value / self.fx_rate
 
@@ -182,16 +173,8 @@ class TsoLeg:
         return self._per_mwh(self.plan.total)
 
     @property
-    def all_daily_per_mwh(self) -> Fraction:
-        return self._per_mwh(self.plan.all_daily_total)
-
-    @property
     def eur_per_mwh(self) -> Fraction | None:
         return self._to_eur(self.per_mwh)
-
-    @property
-    def all_daily_eur_per_mwh(self) -> Fraction | None:
-        return self._to_eur(self.all_daily_per_mwh)
 
     @property
     def point_eur_per_mwh(self) -> tuple[Fraction | None, ...]:
@@ -244,16 +227,6 @@ class RouteResult:
         return self._sum(leg.eur_per_mwh for leg in self.legs)
 
     @property
-    def all_daily_eur_per_mwh(self) -> Fraction | None:
-        return self._sum(leg.all_daily_eur_per_mwh for leg in self.legs)
-
-    @property
-    def saving_eur_per_mwh(self) -> Fraction | None:
-        if self.eur_per_mwh is None:
-            return None
-        return self.all_daily_eur_per_mwh - self.eur_per_mwh
-
-    @property
     def has_comparison(self) -> bool:
         return any(leg.comparison for leg in self.legs)
 
@@ -292,20 +265,6 @@ class RouteResult:
         if len(groups) < 2:
             return None
         return "; ".join(f"{', '.join(names)} without {product}" for product, names in groups.items())
-
-
-def parse_fx_rate(text, currency: str = "HUF") -> tuple[Fraction | None, str | None]:
-    """(rate, None) for a positive number, (None, None) for a blank box,
-    (None, message) for anything else."""
-    if text is None or not str(text).strip():
-        return None, None
-    try:
-        rate = parse_number(text)
-    except ValueError:
-        return None, rate_message(currency)
-    if rate <= 0:
-        return None, rate_message(currency)
-    return rate, None
 
 
 def group_by_tso(route: list[Point]) -> list[tuple[str, list[Point]]]:

@@ -9,3 +9,8 @@ __pycache__/
 .pytest_cache/
 *.pyc
 .venv/
+
+# Secrets and per-machine settings never go into the repository.
+.env
+.streamlit/secrets.toml
+.claude/settings.local.json

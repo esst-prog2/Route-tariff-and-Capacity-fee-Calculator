@@ -51,6 +51,8 @@ TSOS: Mapping[str, tuple[str, str, str]] = {
 }
 TSO_NAMES: Mapping[str, str] = {code: name for code, (name, _, _) in TSOS.items()}
 TSO_FORMATS: Mapping[str, tuple[str, str]] = {code: (currency, unit) for code, (_, currency, unit) in TSOS.items()}
+# The energy one unit of each capacity unit carries per day, in kWh (so 1 kWh/h = 24 kWh/d).
+HOURS_PER_UNIT: Mapping[str, int] = {"kWh/h": 24, "kWh/d": 1}
 # Rows left out on purpose, without a warning: the pre-euro BGN and HRK tariffs.
 SKIPPED_CURRENCIES: Mapping[str, tuple[str, ...]] = {"BGTRGAZ": ("BGN",), "plinacr": ("HRK",)}
 
@@ -76,10 +78,10 @@ class TariffRow:
     valid_from: date
     valid_to: date | None  # None = open-ended
     prices: Mapping[str, Fraction] = field(compare=False)  # `currency` per 1 `unit` for the whole product period
-    currency: str = "HUF"
-    unit: str = "kWh/h"
-    capacity_type: str = FIRM
-    network_point: str = field(default="", compare=False)  # the source `Network point` text
+    currency: str
+    unit: str
+    capacity_type: str
+    network_point: str = field(compare=False)  # the source `Network point` text
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -220,7 +222,10 @@ def load_tariffs(source) -> LoadResult:
         frame = excel.parse(sheet)
     except Exception as exc:  # unreadable, wrong format, missing file ...
         return LoadResult(None, [f"The tariff file could not be read as an Excel file ({exc})."])
-    return parse_frame(frame)
+    result = parse_frame(frame)
+    if sheet != SHEET_NAME:
+        result.warnings.insert(0, f"The file has no '{SHEET_NAME}' sheet, so its first sheet '{sheet}' was read.")
+    return result
 
 
 def parse_frame(frame: pd.DataFrame) -> LoadResult:

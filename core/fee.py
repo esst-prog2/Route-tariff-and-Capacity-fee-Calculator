@@ -14,9 +14,9 @@ from fractions import Fraction
 from typing import Mapping
 
 from . import periods
-from .money import CURRENCY_DECIMALS, parse_number, round_minor, split_by_weights
+from .money import CURRENCY_DECIMALS, EUR, parse_fx_rate, parse_number, round_minor, split_by_weights
 from .points import Bundle, Point
-from .tariffs import NoTariffRow, ProductPart, TariffTable
+from .tariffs import HOURS_PER_UNIT, NoTariffRow, ProductPart, TariffTable
 
 GAS_YEAR = "gas_year"
 QUARTER = "quarter"
@@ -26,8 +26,6 @@ INSTRUMENTS = (GAS_YEAR, QUARTER, MONTH, DAY)
 INSTRUMENT_LABELS = {GAS_YEAR: "Gas year", QUARTER: "Quarter", MONTH: "Month", DAY: "Day"}
 
 CAPACITY_MESSAGE = "Capacity must be a positive number (kWh/d)."
-HOURS_PER_DAY = 24
-EUR = "EUR"
 
 
 @dataclass(frozen=True)
@@ -38,6 +36,8 @@ class FeeError:
 @dataclass(frozen=True)
 class NoTariffError(FeeError):
     """No tariff row applies to the point on a day of the product period."""
+
+    day: date  # the first day of the period without a row
 
 
 @dataclass(frozen=True)
@@ -111,18 +111,16 @@ class RatesNeeded:
 def resolve_period(instrument: str, *, gas_year=None, year=None, quarter=None, month=None, day=None):
     """(start, end) of the chosen product period, or a FeeError when the
     selection is incomplete. `quarter` is the calendar quarter (Q4 = Oct-Dec)."""
-    try:
-        if instrument == GAS_YEAR:
-            return periods.gas_year_period(gas_year)
-        if instrument == QUARTER:
-            return periods.quarter_period(year, quarter)
-        if instrument == MONTH:
-            return periods.month_first(year, month), periods.month_last(year, month)
-        if instrument == DAY:
-            return (day, day) if day is not None else FeeError("Choose a product period.")
-    except (TypeError, ValueError):
-        pass
-    return FeeError("Choose a product period.")
+    needed = {GAS_YEAR: (gas_year,), QUARTER: (year, quarter), MONTH: (year, month), DAY: (day,)}.get(instrument)
+    if needed is None or None in needed:
+        return FeeError("Choose a product period.")
+    if instrument == GAS_YEAR:
+        return periods.gas_year_period(gas_year)
+    if instrument == QUARTER:
+        return periods.quarter_period(year, quarter)
+    if instrument == MONTH:
+        return periods.month_first(year, month), periods.month_last(year, month)
+    return day, day
 
 
 def _price_cell(row, instrument: str, start: date) -> tuple[str, Fraction]:
@@ -158,11 +156,11 @@ def calculate_fee(
         price, parts = table.product_price(*point.key, start, end, cell)
     except NoTariffRow as missing:
         return NoTariffError(
-            f"No tariff exists for {point.tso_name} {point.cleaned_name} on {missing.day.isoformat()}.")
+            f"No tariff exists for {point.tso_name} {point.cleaned_name} on {missing.day.isoformat()}.", missing.day)
 
     row = parts[0].row
     column = _price_cell(row, instrument, start)[0]
-    capacity = capacity_kwh_d / HOURS_PER_DAY if row.unit == "kWh/h" else capacity_kwh_d
+    capacity = capacity_kwh_d / HOURS_PER_UNIT[row.unit]
     exact_total = capacity * price
     total = round_minor(exact_total, row.currency)
 
@@ -206,7 +204,7 @@ def calculate_bundle_fee(
         if isinstance(result, NoTariffError):
             side_text = "exit" if side.direction == "Exit" else "entry"
             return NoTariffError(f"No tariff exists for the {side.tso_name} {side_text} side "
-                                 f"({side.cleaned_name}) on {start.isoformat()}.")
+                                 f"({side.cleaned_name}) on {result.day.isoformat()}.", result.day)
         if isinstance(result, FeeError):
             return result
         results.append(result)
@@ -219,22 +217,17 @@ def bundle_eur_total(result: BundleFeeResult, rate_texts: Mapping[str, str]) -> 
     rates: dict[str, Fraction] = {}
     missing, invalid = [], []
     for currency in result.rate_currencies:
-        text = str(rate_texts.get(currency) or "").strip()
-        if not text:
-            missing.append(currency)
-            continue
-        try:
-            rate = parse_number(text)
-        except ValueError:
-            rate = Fraction(0)
-        if rate > 0:
-            rates[currency] = rate
-        else:
+        rate, message = parse_fx_rate(rate_texts.get(currency), currency)
+        if message:
             invalid.append(currency)
+        elif rate is None:
+            missing.append(currency)
+        else:
+            rates[currency] = rate
     if missing or invalid:
         return RatesNeeded(tuple(missing), tuple(invalid))
     total = sum(
-        (Fraction(r.total, 10 ** CURRENCY_DECIMALS[r.currency]) / rates.get(r.currency, Fraction(1))
+        (Fraction(r.total, 10 ** CURRENCY_DECIMALS[r.currency]) / (1 if r.currency == EUR else rates[r.currency])
          for r in result.sides),
         Fraction(0),
     )

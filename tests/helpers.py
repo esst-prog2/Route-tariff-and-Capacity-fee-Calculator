@@ -6,6 +6,7 @@ from __future__ import annotations
 import pandas as pd
 
 from core import periods
+from core.points import BULGARTRANSGAZ, ENTRY, EXIT, FGSZ, GASTRANS, Point
 from core.tariffs import TariffTable, parse_frame
 
 WD_COLUMNS = [f"WD_{c.split('_')[1]}" for c in periods.MONTH_COLUMNS]
@@ -58,6 +59,42 @@ def make_table(*rows) -> TariffTable:
     return result.table
 
 
+# The points of the first versions (FGSZ, Gastrans, Bulgartransgaz) with the names and flows the app has
+# shown for them since; the catalog built from the tariff rows must keep producing exactly these.
+KNOWN_POINTS: tuple[Point, ...] = (
+    Point(FGSZ, "Mosonmagyaróvár", "AT>HU", "21Z000000000003C", ENTRY),
+    Point(FGSZ, "Beregdaróc", "UA>HU", "21Z000000000139O", ENTRY),
+    Point(FGSZ, "Csanádpalota", "RO>HU", "21Z000000000236Q", ENTRY),
+    Point(FGSZ, "Drávaszerdahely", "CR>HU", "21Z000000000249H", ENTRY),
+    Point(FGSZ, "Balassagyarmat", "SK>HU", "21Z000000000358C", ENTRY),
+    Point(FGSZ, "Kiskundorozsma 2", "RS>HU", "21Z000000000505P", ENTRY),
+    Point(FGSZ, "VIP Bereg", "UA>HU", "21Z000000000507L", ENTRY),
+    Point(FGSZ, "Balassagyarmat", "HU>SK", "21Z000000000358C", EXIT),
+    Point(FGSZ, "Csanádpalota", "HU>RO", "21Z000000000236Q", EXIT),
+    Point(FGSZ, "Drávaszerdahely", "HU>CR", "21Z000000000249H", EXIT),
+    Point(FGSZ, "Kiskundorozsma", "HU>RS", "21Z000000000154S", EXIT),
+    Point(FGSZ, "Kiskundorozsma 2", "HU>RS", "21Z000000000505P", EXIT),
+    Point(FGSZ, "VIP Bereg", "HU>UA", "21Z000000000507L", EXIT),
+    Point(GASTRANS, "Kireevo/Zaychar", "BG>RS", "58Z-000000007-KZ", ENTRY),
+    Point(GASTRANS, "Kiskundorozsma 2", "HU>RS", "21Z000000000505P", ENTRY),
+    Point(GASTRANS, "Kiskundorozsma 2", "RS>HU", "21Z000000000505P", EXIT),
+    Point(GASTRANS, "Kireevo/Zaychar", "RS>BG", "58Z-000000007-KZ", EXIT),
+    Point(BULGARTRANSGAZ, "Kireevo/Zaychar", "RS>BG", "58Z-000000007-KZ", ENTRY),
+    Point(BULGARTRANSGAZ, "Kulata/Sidirokastron", "GR>BG", "21Z000000000020C", ENTRY),
+    Point(BULGARTRANSGAZ, "Strandzha 1/Malkoclar", "TR>BG", "21Z000000000157M", ENTRY),
+    Point(BULGARTRANSGAZ, "Negru Voda 1/Kardam", "RO>BG", "21Z000000000159I", ENTRY),
+    Point(BULGARTRANSGAZ, "Ruse/Giurgiu", "RO>BG", "21Z0000000002798", ENTRY),
+    Point(BULGARTRANSGAZ, "Strandzha 2/Malkoclar", "TR>BG", "58Z-00000015-S2M", ENTRY),
+    Point(BULGARTRANSGAZ, "Stara Zagora", "ICGB>BG", "58Z-IP-00034-STZ", ENTRY),
+    Point(BULGARTRANSGAZ, "Kireevo/Zaychar", "BG>RS", "58Z-000000007-KZ", EXIT),
+    Point(BULGARTRANSGAZ, "Kulata/Sidirokastron", "BG>GR", "21Z000000000020C", EXIT),
+    Point(BULGARTRANSGAZ, "Kyustendil/Zidilovo", "BG>MK", "21Z000000000137S", EXIT),
+    Point(BULGARTRANSGAZ, "Strandzha 1/Malkoclar", "BG>TR", "21Z000000000157M", EXIT),
+    Point(BULGARTRANSGAZ, "Negru Voda 1/Kardam", "BG>RO", "21Z000000000159I", EXIT),
+    Point(BULGARTRANSGAZ, "Ruse/Giurgiu", "BG>RO", "21Z0000000002798", EXIT),
+)
+
+
 KIREEVO = "Kireevo/Zaychar (BG - RS)"
 KISKUNDOROZSMA_2 = "Kiskundorozsma 2 (HU - RS)"
 _CORRIDOR = ["BG", KIREEVO, "RS", KISKUNDOROZSMA_2, "HU"]
@@ -84,5 +121,5 @@ def corridor_points(begin: str, end: str):
     for a, b in zip(path, path[1:]):
         eic, flow = eics[frozenset({a, b})], f"{a}>{b}"
         for tso, direction in ((tsos[a], points.EXIT), (tsos[b], points.ENTRY)):
-            found.append(next(p for p in points.POINTS if p.key == (tso, eic, direction) and p.flow == flow))
+            found.append(next(p for p in KNOWN_POINTS if p.key == (tso, eic, direction) and p.flow == flow))
     return found

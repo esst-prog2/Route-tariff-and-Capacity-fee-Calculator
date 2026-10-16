@@ -42,6 +42,15 @@ def test_reads_an_excel_file_and_the_capacity_fee_sheet(tmp_path):
         )
     result = load_tariffs(path)
     assert result.ok and len(result.table) == 2
+    assert result.warnings == []
+
+
+def test_a_file_without_the_capacity_fee_sheet_says_which_sheet_it_read(tmp_path):
+    path = tmp_path / "t.xlsx"
+    make_frame(make_row()).to_excel(path, sheet_name="Export", index=False)
+    result = load_tariffs(path)
+    assert result.ok and len(result.table) == 1
+    assert result.warnings == ["The file has no 'Capacity_fee' sheet, so its first sheet 'Export' was read."]
 
 
 # --- 3.2 row-level validation --------------------------------------------------

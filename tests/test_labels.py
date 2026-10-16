@@ -10,8 +10,8 @@ from core.optimizer import DAILY, MONTHLY, QUARTERLY, YEARLY, Plan, Segment
 
 
 def plan(start, end, *segments):
-    segs = tuple(Segment(first, last, product, Fraction(1), "") for first, last, product in segments)
-    return Plan(start, end, segs, Fraction(len(segs)), Fraction(0))
+    segs = tuple(Segment(first, last, product, Fraction(1)) for first, last, product in segments)
+    return Plan(start, end, segs, Fraction(len(segs)))
 
 
 @pytest.mark.parametrize("p,text", [
