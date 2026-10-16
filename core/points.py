@@ -166,6 +166,7 @@ class Catalog:
     lng: tuple[Point, ...]
     bundles: tuple[Bundle, ...]
     capacity_types: dict[tuple[str, str, str], str]
+    unnamed: tuple[str, ...] = ()  # sides left out because no border flow could be read from their name
 
     def tsos(self) -> list[str]:
         """TSOs that have at least one single side, by display name."""
@@ -181,13 +182,16 @@ class Catalog:
 def build_catalog(table: TariffTable) -> Catalog:
     """Every usable point of the loaded rows, as single sides, LNG entries and bundles."""
     cleaned: dict[tuple[str, str, str], tuple[str, str]] = {}
+    unnamed: list[str] = []
     for key in table.keys():
-        tso, eic, _ = key
+        tso, eic, direction = key
         if (tso, eic) in EXCLUDED:
             continue
         result = FLOW_OVERRIDES.get(key) or clean_name(table.network_point(*key))
         if result is not None:
             cleaned[key] = result
+        else:
+            unnamed.append(f"{tso_name(tso)} {direction.lower()} {table.network_point(*key)} ({eic})")
 
     # One name per EIC, so both sides of a border read the same: the fixed name, else the most
     # common cleaned one (the spelling with diacritics wins a tie).
@@ -219,7 +223,7 @@ def build_catalog(table: TariffTable) -> Catalog:
         (b for b in pairs if firm(b.exit) and firm(b.entry)),
         key=lambda b: (b.name.casefold(), b.flow, tso_name(b.exit.tso), tso_name(b.entry.tso)),
     ))
-    return Catalog(singles, lng, bundles, capacity_types)
+    return Catalog(singles, lng, bundles, capacity_types, tuple(unnamed))
 
 
 # --- the network tab 1 routes run on ---------------------------------------------------------

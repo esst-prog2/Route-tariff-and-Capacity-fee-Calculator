@@ -412,6 +412,10 @@ if load_result.warnings:
             st.write(message)
 
 catalog = points.build_catalog(load_result.table)
+if catalog.unnamed:
+    with st.sidebar.expander(f"{len(catalog.unnamed)} point(s) left out: no border flow in the name"):
+        for name in catalog.unnamed:
+            st.write(name)
 route, capacity_fee = st.tabs(["Route Tariff Calculator", "Capacity Fee Calculator"])
 with route:
     route_tab(load_result.table, points.build_network(catalog))

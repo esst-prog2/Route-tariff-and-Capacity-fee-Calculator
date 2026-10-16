@@ -497,6 +497,23 @@ def test_excluded_rows_are_reported_but_the_app_still_works(tmp_path, monkeypatc
     assert len(at.tabs) == 2
 
 
+def test_a_point_without_a_flow_in_its_name_is_listed_in_the_sidebar(tmp_path, monkeypatch):
+    path = tmp_path / "unnamed.xlsx"
+    formats = {"FGSZ": {}, "Gastran": {"currency": "EUR"}, "BGTRGAZ": {"currency": "EUR", "unit": "kWh/d"}}
+    make_frame(
+        *[make_row(eic=p.eic, direction=p.direction, operator=p.tso, name=p.cleaned_name, valid_from="2026-10-01", valid_to=None,
+                   **formats[p.tso])
+          for p in corridor_points("BG", "HU")],
+        make_row(eic="21Z000000000236Q", name="Csanádpalota", valid_from="2026-10-01", valid_to=None),
+    ).to_excel(path, sheet_name="Capacity_fee", index=False)
+    monkeypatch.setenv(tariffs.PATH_ENV_VAR, str(path))
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("1 point(s) left out" in expander.label for expander in at.sidebar.expander)
+    assert len(at.tabs) == 2
+
+
 def test_missing_configured_file_is_a_message(tmp_path, monkeypatch):
     monkeypatch.setenv(tariffs.PATH_ENV_VAR, str(tmp_path / "nope.xlsx"))
     at = AppTest.from_file(APP, default_timeout=60)
