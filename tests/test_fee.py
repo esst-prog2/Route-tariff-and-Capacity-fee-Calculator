@@ -3,7 +3,7 @@ from fractions import Fraction
 
 import pytest
 
-from core import fee, money, points
+from core import fee, money
 from core.fee import (DAY, GAS_YEAR, MONTH, QUARTER, FeeError, FeeResult,
                       calculate_fee, resolve_period)
 from core.tariffs import DEFAULT_SAMPLE_PATH, load_tariffs

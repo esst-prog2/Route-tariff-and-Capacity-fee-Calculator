@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from core import points, tariffs
+from core import tariffs
 
 from .helpers import corridor_points, make_frame, make_row
 

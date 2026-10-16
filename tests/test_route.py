@@ -53,9 +53,9 @@ def test_summing_entry_and_exit():
     assert oracle.month_price(2026, 12) == Fraction("3.70")
     assert oracle.day_price(date(2026, 12, 5)) == Fraction("0.3")
     assert oracle.quarter_price(2026, 4) == Fraction("10.18")
-    assert oracle.tariff_used(date(2026, 12, 1), date(2026, 12, 1)) == (
-        "entry from 2026-10-01 (open-ended); exit from 2026-10-01 (open-ended)"
-    )
+    assert [oracle.sources(p, date(2026, 12, 1), date(2026, 12, 1)) for p in gastrans] == [
+        "from 2026-10-01 (open-ended)", "from 2026-10-01 (open-ended)",
+    ]
 
 
 def test_a_tso_with_one_point_is_priced_alone_in_its_own_unit():
@@ -173,8 +173,9 @@ def test_period_crossing_1_october_splits_at_the_boundary_with_old_and_new_rows(
         (date(2026, 9, 20), date(2026, 9, 30), DAILY), (date(2026, 10, 1), date(2026, 10, 10), DAILY),
     ]
     assert old.price == 11 * 5 and new.price == 10 * 20
-    assert old.tariff_used == "entry from 2025-10-01"
-    assert new.tariff_used == "entry from 2026-10-01 (open-ended)"
+    fgsz_entry = leg(result, FGSZ).points[0]
+    assert point_tariff_used(table, fgsz_entry, old) == "from 2025-10-01"
+    assert point_tariff_used(table, fgsz_entry, new) == "from 2026-10-01 (open-ended)"
 
 
 # --- over-booking ------------------------------------------------------------------------------------
@@ -200,8 +201,8 @@ def test_over_booking_product_without_a_tariff_on_its_first_day_is_skipped():
 
 # --- 3.3 per-MWh, EUR and route totals -------------------------------------------------------------
 
-def make_leg(tso, total, start=date(2026, 12, 5), end=date(2027, 1, 15), fx=None, all_daily=None):
-    plan = Plan(start, end, (), Fraction(total), Fraction(all_daily if all_daily is not None else total))
+def make_leg(tso, total, start=date(2026, 12, 5), end=date(2027, 1, 15), fx=None):
+    plan = Plan(start, end, (), Fraction(total))
     return TsoLeg(tso, (), plan, fx)
 
 
@@ -240,17 +241,16 @@ def test_without_a_rate_the_huf_leg_and_route_have_no_eur_figure():
     legs = (make_leg(GASTRANS, "0.72", *days), make_leg(FGSZ, "480", *days))
     result = RouteResult("RS", "HU", "", (), legs, (("HUF", None),))
     assert legs[0].eur_per_mwh == 3 and legs[1].eur_per_mwh is None and legs[1].per_mwh == 2000
-    assert result.eur_per_mwh is None and result.all_daily_eur_per_mwh is None and result.saving_eur_per_mwh is None
+    assert result.eur_per_mwh is None
 
 
-def test_totals_baseline_and_saving_through_the_route():
+def test_totals_through_the_route():
     table = route_table(valid_from="2026-10-01", valid_to=None)  # per point: M 100, D 4
     result = calculate_route(table, *corridor("BG", "HU"), date(2026, 12, 1), date(2026, 12, 31), {"HUF": "400"})
     fgsz, gastrans = leg(result, FGSZ), leg(result, GASTRANS)
-    assert gastrans.plan.total == 200 and gastrans.plan.all_daily_total == 31 * 8 and gastrans.plan.saving == 48
+    assert gastrans.plan.total == 200  # two monthly products, cheaper than 31 x 2 x 4 daily
     assert fgsz.eur_per_mwh == Fraction(100) / (24 * 31) * 1000 / 400
     assert result.eur_per_mwh == sum(l.eur_per_mwh for l in result.legs)
-    assert result.saving_eur_per_mwh == result.all_daily_eur_per_mwh - result.eur_per_mwh
 
 
 def test_over_booked_days_are_not_counted():
@@ -437,7 +437,6 @@ def test_product_priced_from_two_rows_in_details():
     assert year.product == "yearly"
     assert point_tariff(table, bg.points[0], year) == (Fraction("3.97"), Fraction("4.1"))
     assert point_tariff_used(table, bg.points[0], year) == "from 2026-01-01, from 2027-01-01 (open-ended)"
-    assert year.tariff_used == "exit from 2026-01-01, from 2027-01-01 (open-ended)"
 
 
 # --- network routes and a rate per currency (tab1-network-map) -------------------------------------
