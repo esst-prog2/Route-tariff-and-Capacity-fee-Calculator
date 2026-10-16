@@ -111,18 +111,16 @@ class RatesNeeded:
 def resolve_period(instrument: str, *, gas_year=None, year=None, quarter=None, month=None, day=None):
     """(start, end) of the chosen product period, or a FeeError when the
     selection is incomplete. `quarter` is the calendar quarter (Q4 = Oct-Dec)."""
-    try:
-        if instrument == GAS_YEAR:
-            return periods.gas_year_period(gas_year)
-        if instrument == QUARTER:
-            return periods.quarter_period(year, quarter)
-        if instrument == MONTH:
-            return periods.month_first(year, month), periods.month_last(year, month)
-        if instrument == DAY:
-            return (day, day) if day is not None else FeeError("Choose a product period.")
-    except (TypeError, ValueError):
-        pass
-    return FeeError("Choose a product period.")
+    needed = {GAS_YEAR: (gas_year,), QUARTER: (year, quarter), MONTH: (year, month), DAY: (day,)}.get(instrument)
+    if needed is None or None in needed:
+        return FeeError("Choose a product period.")
+    if instrument == GAS_YEAR:
+        return periods.gas_year_period(gas_year)
+    if instrument == QUARTER:
+        return periods.quarter_period(year, quarter)
+    if instrument == MONTH:
+        return periods.month_first(year, month), periods.month_last(year, month)
+    return day, day
 
 
 def _price_cell(row, instrument: str, start: date) -> tuple[str, Fraction]:

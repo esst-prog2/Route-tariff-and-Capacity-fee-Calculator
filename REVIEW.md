@@ -79,3 +79,29 @@ Found and left:
   year, quarter, month, day) and `route._segment_cell` (the optimiser's products: yearly,
   quarterly, monthly). They are short and each follows its own tab's vocabulary, which the specs
   and the UI labels use; merging them would mean a third set of names.
+
+## 4. Errors that disappear
+
+Searched every `except`, and every place where a failed step just leaves something out, for errors
+that are caught and then never reach the user.
+
+Found and fixed:
+- **`resolve_period` swallowed `TypeError` and `ValueError` with `pass`** and turned them into
+  "Choose a product period.". The intent was "a picker is still empty", but the same `except` also
+  hid real bugs (an impossible month, a wrong argument) behind that harmless-looking prompt. It now
+  checks for the missing selection explicitly; anything else raises. Test:
+  `test_an_impossible_period_raises_instead_of_reading_as_an_incomplete_selection`.
+- **A point whose name has no border flow vanished.** `build_catalog` skipped any side for which no
+  flow (like `RO>HU`) could be read from its `Network point` text, with no message. On the committed
+  files no side is lost this way, but in an uploaded file a point would simply be missing from both
+  tabs. The catalog now lists those sides (`Catalog.unnamed`) and the sidebar shows them, like the
+  excluded rows. Tests: `test_a_side_whose_name_has_no_flow_is_reported_not_dropped_silently`,
+  `test_a_point_without_a_flow_in_its_name_is_listed_in_the_sidebar`.
+
+Checked and kept:
+- `load_tariffs` catches every exception while opening the Excel file, but turns it into an error
+  shown on the page (with the exception text) and stops; nothing carries on with empty data.
+- `optimizer._optional_price` catches `PriceUnavailable` and drops that product as an option. The
+  spec asks for exactly that for a product starting before the period with no tariff on some day;
+  a day that is really requested and has no tariff still raises and is shown as a message.
+- `parse_fx_rate` and the capacity parsing catch `ValueError` and return the message the user sees.

@@ -38,6 +38,12 @@ def test_incomplete_selection_is_a_message(kwargs):
     assert isinstance(resolve_period(**kwargs), FeeError)
 
 
+def test_an_impossible_period_raises_instead_of_reading_as_an_incomplete_selection():
+    # The pickers only offer real months, so month 13 is a bug and must not turn into "Choose a product period."
+    with pytest.raises(ValueError):
+        resolve_period(MONTH, year=2026, month=13)
+
+
 # --- 6.2 price cell and exact conversion ---------------------------------------------------
 
 def test_demo_quarter_on_hand_built_prices():
