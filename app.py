@@ -139,7 +139,7 @@ def route_map(network: points.Network, labels: list[str]) -> alt.LayerChart:
     rows = []
     for point in network.points:
         position = map_points.point_position(point.name, point.countries)
-        if position is not None:
+        if position is not None:  # the others are listed under the map (`unplaced_points`)
             rows.append({"label": point.label, "name": point.name, "between": f"{point.countries[0]} - {point.countries[1]}",
                          "lon": position[0], "lat": position[1], "on_route": point.label in on_route,
                          "order": on_route.get(point.label, -1)})
@@ -158,6 +158,11 @@ def route_map(network: points.Network, labels: list[str]) -> alt.LayerChart:
         height=MAP_HEIGHT)
 
 
+def unplaced_points(network: points.Network) -> list[str]:
+    """Map points without a typed-in position (possible with an uploaded file): no marker is drawn for them."""
+    return [p.label for p in network.points if map_points.point_position(p.name, p.countries) is None]
+
+
 def route_tab(table, network: points.Network) -> None:
     init_route(network)
     countries = list(network.countries)
@@ -172,6 +177,9 @@ def route_tab(table, network: points.Network) -> None:
 
     event = st.altair_chart(route_map(network, route_labels), on_select="rerun", width="stretch",
                             key=f"route_map_{st.session_state.route_map_version}")
+    unplaced = unplaced_points(network)
+    if unplaced:
+        st.caption(f"Not on the map (no position known), choose them in the Next point list: {', '.join(unplaced)}.")
     picked = event.selection.get("pick") if event and event.selection else None
     if picked:
         add_route_point(network, picked[0]["label"])

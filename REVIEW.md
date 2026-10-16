@@ -105,3 +105,30 @@ Checked and kept:
   spec asks for exactly that for a product starting before the period with no tariff on some day;
   a day that is really requested and has no tariff still raises and is shown as a message.
 - `parse_fx_rate` and the capacity parsing catch `ValueError` and return the message the user sees.
+
+## 5. Quiet defaults
+
+Looked at every default value and every `.get(key, default)` for the ones where a missing value is
+really a mistake but the code quietly picks something instead.
+
+Found and fixed:
+- **`TariffRow` defaulted to HUF, kWh/h and Firm.** Left over from the FGSZ-only version: a row built
+  without its currency would silently have become a forint row priced per kWh/h. The loader always
+  passes all three, so the defaults only hid mistakes; they are now required.
+- **`parse_fx_rate(text, currency="HUF")`**: a caller forgetting the currency would get messages
+  about the HUF rate. The currency is now required.
+- **The bundle EUR total divided by `rates.get(currency, 1)`**, so a currency without a rate would
+  have counted 1:1 as euros. Today the missing rates are caught just before, but the fallback was a
+  trap; it now uses 1 only for EUR itself and fails loudly otherwise.
+- `tso_name` returned the raw operator code for an unknown TSO; only the 21 known TSOs can reach it,
+  so an unknown one is now an error instead of a strange label.
+- **A file without a `Capacity_fee` sheet was read from its first sheet without saying so.** Kept,
+  because a renamed sheet should still work, but the sidebar now says which sheet was read.
+  Test: `test_a_file_without_the_capacity_fee_sheet_says_which_sheet_it_read`.
+- **A map point without a typed-in position got no marker, silently.** With an uploaded file, a new
+  border point would be routable from the "Next point" list but missing from the map. Such points are
+  now named under the map. Test: `test_a_border_point_without_a_map_position_is_named_under_the_map`.
+
+Checked and kept: the route defaults to an empty route when the file lacks the default points (the
+tab then asks for the first point), and `resolve_tariff_path` falls back to the committed real file
+when the variable is unset, as the spec says.

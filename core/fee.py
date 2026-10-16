@@ -227,7 +227,7 @@ def bundle_eur_total(result: BundleFeeResult, rate_texts: Mapping[str, str]) -> 
     if missing or invalid:
         return RatesNeeded(tuple(missing), tuple(invalid))
     total = sum(
-        (Fraction(r.total, 10 ** CURRENCY_DECIMALS[r.currency]) / rates.get(r.currency, Fraction(1))
+        (Fraction(r.total, 10 ** CURRENCY_DECIMALS[r.currency]) / (1 if r.currency == EUR else rates[r.currency])
          for r in result.sides),
         Fraction(0),
     )
