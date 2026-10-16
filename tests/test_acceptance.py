@@ -12,7 +12,7 @@ from core.optimizer import MONTHLY, QUARTERLY, optimize
 from core.route import RouteError, RouteResult, TsoOracle, calculate_route
 from core.tariffs import DEFAULT_SAMPLE_PATH, load_tariffs
 
-from .helpers import KISKUNDOROZSMA_2, corridor, corridor_points, make_row, make_table
+from .helpers import KNOWN_POINTS, KISKUNDOROZSMA_2, corridor, corridor_points, make_row, make_table
 
 
 @pytest.fixture(scope="module")
@@ -23,7 +23,7 @@ def sample():
 
 
 def point(tso, name, flow):
-    return next(p for p in points.POINTS if (p.tso, p.name, p.flow) == (tso, name, flow))
+    return next(p for p in KNOWN_POINTS if (p.tso, p.name, p.flow) == (tso, name, flow))
 
 
 def leg(result, tso):
@@ -34,7 +34,7 @@ def leg(result, tso):
 @pytest.mark.parametrize("capacity", ["1", "50000", "123456.789"])
 def test_monthly_breakdown_sums_to_the_exact_total_for_every_point_and_instrument(sample, capacity):
     checked = 0
-    for p, (instrument, selection) in product(points.POINTS, [
+    for p, (instrument, selection) in product(KNOWN_POINTS, [
         (fee.GAS_YEAR, {"gas_year": 2026}),
         (fee.QUARTER, {"year": 2026, "quarter": 4}),
         (fee.QUARTER, {"year": 2027, "quarter": 1}),
@@ -96,7 +96,7 @@ def test_open_ended_row_prices_dates_years_after_it_starts(sample):
         assert l.plan.segments[0].product == MONTHLY
         assert "from 2026-10-01 (open-ended)" in l.plan.segments[0].tariff_used
     start, end = fee.resolve_period(fee.GAS_YEAR, gas_year=2035)
-    for p in points.POINTS:
+    for p in KNOWN_POINTS:
         assert isinstance(fee.calculate_fee(sample, p, fee.GAS_YEAR, start, end, "50000"), fee.FeeResult), p
 
 
@@ -107,7 +107,7 @@ def test_quarter_versus_three_months_flips_with_the_prices():
     def products(quarter_price):
         prices = {"Q4_Oct": quarter_price / 2, "M_Oct": 50.0, "M_Nov": 50.0, "M_Dec": 50.0}  # Gastrans months = 300
         table = make_table(*[
-            make_row(eic=p.eic, direction=p.direction, operator=p.tso, valid_from="2026-10-01", valid_to=None,
+            make_row(eic=p.eic, direction=p.direction, operator=p.tso, name=p.cleaned_name, valid_from="2026-10-01", valid_to=None,
                      prices=prices, **formats[p.tso])
             for p in corridor_points("BG", "HU")
         ])

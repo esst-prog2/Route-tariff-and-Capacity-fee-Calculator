@@ -484,7 +484,7 @@ def test_excluded_rows_are_reported_but_the_app_still_works(tmp_path, monkeypatc
     path = tmp_path / "partial.xlsx"
     formats = {"FGSZ": {}, "Gastran": {"currency": "EUR"}, "BGTRGAZ": {"currency": "EUR", "unit": "kWh/d"}}
     make_frame(
-        *[make_row(eic=p.eic, direction=p.direction, operator=p.tso, valid_from="2026-10-01", valid_to=None,
+        *[make_row(eic=p.eic, direction=p.direction, operator=p.tso, name=p.cleaned_name, valid_from="2026-10-01", valid_to=None,
                    **formats[p.tso])
           for p in corridor_points("BG", "HU")],
         make_row(eic="BADROW", name="Bad", prices={"D_Dec": None}),

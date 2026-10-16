@@ -15,7 +15,7 @@ from core.route import (
 )
 from core.tariffs import load_tariffs
 
-from .helpers import KIREEVO, KISKUNDOROZSMA_2, corridor, corridor_points, make_row, make_table
+from .helpers import KNOWN_POINTS, KIREEVO, KISKUNDOROZSMA_2, corridor, corridor_points, make_row, make_table
 
 FORMATS = {FGSZ: {}, GASTRANS: {"currency": "EUR"}, BULGARTRANSGAZ: {"currency": "EUR", "unit": "kWh/d"}}
 
@@ -24,7 +24,7 @@ def route_table(begin="BG", end="HU", prices=None, **row_args):
     """One row per point of the route; `prices` maps a TSO to its price overrides."""
     prices = prices or {}
     return make_table(*[
-        make_row(eic=p.eic, direction=p.direction, operator=p.tso, prices=prices.get(p.tso), **FORMATS[p.tso], **row_args)
+        make_row(eic=p.eic, direction=p.direction, operator=p.tso, name=p.cleaned_name, prices=prices.get(p.tso), **FORMATS[p.tso], **row_args)
         for p in corridor_points(begin, end)
     ])
 
@@ -74,8 +74,8 @@ def test_a_tso_with_one_point_is_priced_alone_in_its_own_unit():
 @pytest.mark.parametrize("begin,point", [("HU", KISKUNDOROZSMA_2), ("RS", KISKUNDOROZSMA_2), ("BG", KIREEVO)])
 def test_entering_a_country_twice_is_not_possible(begin, point):
     table = make_table(*[
-        make_row(eic=p.eic, direction=p.direction, operator=p.tso, **FORMATS[p.tso])
-        for p in points.POINTS if p.eic in ("21Z000000000505P", "58Z-000000007-KZ")
+        make_row(eic=p.eic, direction=p.direction, operator=p.tso, name=p.cleaned_name, **FORMATS[p.tso])
+        for p in KNOWN_POINTS if p.eic in ("21Z000000000505P", "58Z-000000007-KZ")
     ])
     result = calculate_route(table, begin, [point, point], date(2026, 1, 1), date(2026, 1, 5))
     assert isinstance(result, RouteError)
@@ -107,7 +107,7 @@ def test_no_tariff_for_the_dates_names_the_tso_and_point():
 
 def test_missing_rows_of_a_later_point_name_that_point():
     table = make_table(*[
-        make_row(eic=p.eic, direction=p.direction, operator=p.tso, **FORMATS[p.tso])
+        make_row(eic=p.eic, direction=p.direction, operator=p.tso, name=p.cleaned_name, **FORMATS[p.tso])
         for p in corridor_points("BG", "HU") if p.tso != FGSZ
     ])
     # Without FGSZ's entry the RS>HU crossing does not exist in the file, so the point cannot be crossed.
@@ -161,7 +161,7 @@ def test_fx_rate_does_not_change_the_choice():
 def test_period_crossing_1_october_splits_at_the_boundary_with_old_and_new_rows():
     route = corridor_points("RS", "HU")
     table = make_table(*[
-        make_row(eic=p.eic, direction=p.direction, operator=p.tso, **FORMATS[p.tso], valid_from=vf, valid_to=vt, prices=pr)
+        make_row(eic=p.eic, direction=p.direction, operator=p.tso, name=p.cleaned_name, **FORMATS[p.tso], valid_from=vf, valid_to=vt, prices=pr)
         for p in route
         for vf, vt, pr in (("2025-10-01", "2026-09-30", {"D_Sep": 5.0}),
                            ("2026-10-01", None, {"D_Oct": 20.0, "M_Oct": 1000.0}))
@@ -307,7 +307,7 @@ def test_point_costs_add_up_exactly_to_the_leg_and_the_route(begin, end, start, 
 def test_each_point_is_costed_with_its_own_prices_for_the_shared_products():
     entry, exit_ = [p for p in corridor_points("BG", "HU") if p.tso == GASTRANS]
     table = make_table(*[
-        make_row(eic=p.eic, direction=p.direction, operator=p.tso, prices=prices, **FORMATS[p.tso],
+        make_row(eic=p.eic, direction=p.direction, operator=p.tso, name=p.cleaned_name, prices=prices, **FORMATS[p.tso],
                  valid_from="2026-10-01", valid_to=None)
         for p, prices in [(p, {}) for p in corridor_points("BG", "HU") if p.tso != GASTRANS]
         + [(entry, {"Q4_Oct": 100.0}), (exit_, {"Q4_Oct": 150.0})]
@@ -399,13 +399,13 @@ def calendar_year_route_table(year_prices=(3.97, 4.10)):
     for p in corridor_points("BG", "HU"):
         if p.tso == BULGARTRANSGAZ:
             rows += [
-                make_row(eic=p.eic, direction=p.direction, operator=p.tso, **FORMATS[p.tso],
+                make_row(eic=p.eic, direction=p.direction, operator=p.tso, name=p.cleaned_name, **FORMATS[p.tso],
                          valid_from="2026-01-01", valid_to="2026-12-31", prices={"Year": year_prices[0]}),
-                make_row(eic=p.eic, direction=p.direction, operator=p.tso, **FORMATS[p.tso],
+                make_row(eic=p.eic, direction=p.direction, operator=p.tso, name=p.cleaned_name, **FORMATS[p.tso],
                          valid_from="2027-01-01", valid_to=None, prices={"Year": year_prices[1]}),
             ]
         else:
-            rows.append(make_row(eic=p.eic, direction=p.direction, operator=p.tso, **FORMATS[p.tso],
+            rows.append(make_row(eic=p.eic, direction=p.direction, operator=p.tso, name=p.cleaned_name, **FORMATS[p.tso],
                                  valid_from="2026-01-01", valid_to=None))
     return make_table(*rows)
 

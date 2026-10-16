@@ -7,7 +7,7 @@ from core.points import BULGARTRANSGAZ, FGSZ, GASTRANS
 from core import tariffs
 from core.tariffs import load_tariffs
 
-from .helpers import make_row, make_table
+from .helpers import KNOWN_POINTS, make_row, make_table
 
 EXCLUDED_EICS = {
     "21W000000000087M",   # Egyesített Kitárolás (virtual storage)
@@ -29,7 +29,7 @@ def real():
 
 
 def find(tso, name, flow):
-    return next(p for p in points.POINTS if (p.tso, p.name, p.flow) == (tso, name, flow))
+    return next(p for p in KNOWN_POINTS if (p.tso, p.name, p.flow) == (tso, name, flow))
 
 
 def describe(route):
@@ -101,7 +101,7 @@ def test_every_cleaned_name_and_flow_on_the_real_file(real):
 
 
 def test_known_points_keep_their_names_in_the_catalog(real):
-    assert set(points.POINTS) <= set(real.singles)
+    assert set(KNOWN_POINTS) <= set(real.singles)
 
 
 @pytest.mark.parametrize("source,expected", [
@@ -318,7 +318,7 @@ INTERRUPTIBLE = {
 
 def test_every_point_has_rows_of_the_expected_capacity_type_in_the_sample():
     table = load_tariffs(tariffs.DEFAULT_SAMPLE_PATH).table
-    for point in points.POINTS:
+    for point in KNOWN_POINTS:
         expected = "Interruptible" if (point.tso, point.name, point.flow) in INTERRUPTIBLE else "Firm"
         assert table.capacity_type(*point.key) == expected, point
         assert table.find_row(*point.key, date(2026, 10, 1)) is not None, point
