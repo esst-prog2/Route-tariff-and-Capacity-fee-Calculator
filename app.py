@@ -15,7 +15,8 @@ import streamlit as st
 from core import fee, map_points, money, periods, points
 from core.labels import products_text
 from core.points import Bundle
-from core.route import FIRST_POINT_MESSAGE, RouteError, calculate_route, point_tariff, point_tariff_used, rate_message
+from core.fee import dates_text
+from core.route import FIRST_POINT_MESSAGE, RouteError, calculate_route, point_tariff, point_tariff_used
 from core.tariffs import INTERRUPTIBLE, TSO_FORMATS, LoadResult, load_tariffs, resolve_tariff_path
 
 st.set_page_config(page_title="Route Tariff and Capacity Fee Calculator", layout="wide")
@@ -68,8 +69,9 @@ def tariff_text(leg, prices: tuple[Fraction, ...], product: str) -> str:
     return ", ".join(money.format_exact(price) for price in prices) + f" {unit}"
 
 
-def dates_text(start: date, end: date) -> str:
-    return start.isoformat() if start == end else f"{start.isoformat()} to {end.isoformat()}"
+def rates_text(rates) -> str:
+    """The typed rates as shown under a EUR figure: "at 1 EUR = 5 RON; at 1 EUR = 400 HUF"."""
+    return "; ".join(f"at 1 EUR = {plain_rate(rate)} {currency}" for currency, rate in rates)
 
 
 # --- tab 1 -----------------------------------------------------------------------------------
@@ -137,7 +139,7 @@ def route_map(network: points.Network, labels: list[str]) -> alt.LayerChart:
     rows = []
     for point in network.points:
         position = map_points.point_position(point.name, point.countries)
-        if position is not None:
+        if position is not None:  # the others are listed under the map (`unplaced_points`)
             rows.append({"label": point.label, "name": point.name, "between": f"{point.countries[0]} - {point.countries[1]}",
                          "lon": position[0], "lat": position[1], "on_route": point.label in on_route,
                          "order": on_route.get(point.label, -1)})
@@ -156,6 +158,11 @@ def route_map(network: points.Network, labels: list[str]) -> alt.LayerChart:
         height=MAP_HEIGHT)
 
 
+def unplaced_points(network: points.Network) -> list[str]:
+    """Map points without a typed-in position (possible with an uploaded file): no marker is drawn for them."""
+    return [p.label for p in network.points if map_points.point_position(p.name, p.countries) is None]
+
+
 def route_tab(table, network: points.Network) -> None:
     init_route(network)
     countries = list(network.countries)
@@ -170,6 +177,9 @@ def route_tab(table, network: points.Network) -> None:
 
     event = st.altair_chart(route_map(network, route_labels), on_select="rerun", width="stretch",
                             key=f"route_map_{st.session_state.route_map_version}")
+    unplaced = unplaced_points(network)
+    if unplaced:
+        st.caption(f"Not on the map (no position known), choose them in the Next point list: {', '.join(unplaced)}.")
     picked = event.selection.get("pick") if event and event.selection else None
     if picked:
         add_route_point(network, picked[0]["label"])
@@ -244,12 +254,11 @@ def route_tab(table, network: points.Network) -> None:
             st.caption(f"Compared per TSO: {result.comparison_note}.")
         note = "Per-MWh figures assume the booked capacity is used fully on the booked days."
         if result.rates_used:
-            rates = "; ".join(f"at 1 EUR = {plain_rate(rate)} {currency}" for currency, rate in result.rates_used)
-            note = f"EUR/MWh {rates}. " + note
+            note = f"EUR/MWh {rates_text(result.rates_used)}. " + note
         st.caption(note)
     else:
         for currency in result.invalid_rates:
-            st.warning(rate_message(currency))
+            st.warning(money.rate_message(currency))
         if result.missing_rates:
             names = " and ".join(f"{c} per EUR" for c in result.missing_rates)
             plural = "s" if len(result.missing_rates) > 1 else ""
@@ -329,7 +338,7 @@ def show_bundle_total(result: fee.BundleFeeResult) -> None:
         st.info(total.message)
         return
     st.metric("Bundle total (EUR)", money.format_amount(total.amount, "EUR"))
-    rates = "; ".join(f"at 1 EUR = {plain_rate(rate)} {currency}" for currency, rate in total.rates)
+    rates = rates_text(total.rates)
     st.caption("Sum of both sides' totals" + (f", converted {rates}." if rates else ", both in EUR."))
 
 
@@ -411,6 +420,10 @@ if load_result.warnings:
             st.write(message)
 
 catalog = points.build_catalog(load_result.table)
+if catalog.unnamed:
+    with st.sidebar.expander(f"{len(catalog.unnamed)} point(s) left out: no border flow in the name"):
+        for name in catalog.unnamed:
+            st.write(name)
 route, capacity_fee = st.tabs(["Route Tariff Calculator", "Capacity Fee Calculator"])
 with route:
     route_tab(load_result.table, points.build_network(catalog))
