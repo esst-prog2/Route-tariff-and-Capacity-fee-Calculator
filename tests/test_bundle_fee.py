@@ -39,8 +39,8 @@ def test_bundled_quarter_two_currencies(real):
     gca, fgsz = result.sides
     assert (gca.point.tso, gca.point.direction, fgsz.point.tso, fgsz.point.direction) == ("GCA", "Exit", "FGSZ", "Entry")
     assert gca.capacity == fgsz.capacity == Fraction(50_000, 24)
-    assert (gca.price, fgsz.price) == (Fraction("1.25082191"), Fraction("375.627714"))
-    assert (gca.currency, money.format_amount(gca.total, "EUR")) == ("EUR", "2,605.88")
+    assert (gca.price, fgsz.price) == (Fraction("1.2508"), Fraction("375.627714"))  # GCA: 1.25082191 rounded
+    assert (gca.currency, money.format_amount(gca.total, "EUR")) == ("EUR", "2,605.83")  # 50,000 / 24 x 1.2508 = 2,605.833
     assert (fgsz.currency, money.format_amount(fgsz.total, "HUF")) == ("HUF", "782,558")
 
 
@@ -106,12 +106,12 @@ def test_bundle_year_list_starts_at_the_later_side():
 
 def test_eur_total_after_the_rate_is_typed(real):
     total = fee.bundle_eur_total(q4_2026(real, MOSON), {"HUF": "395.5"})
-    assert total == EurTotal(458_453, (("HUF", Fraction("395.5")),))
-    assert money.format_amount(total.amount, "EUR") == "4,584.53"
+    assert total == EurTotal(458_448, (("HUF", Fraction("395.5")),))
+    assert money.format_amount(total.amount, "EUR") == "4,584.48"  # 2,605.83 + 782,558 / 395.5 = 2,605.83 + 1,978.6549
 
 
 def test_rate_with_decimal_comma(real):
-    assert fee.bundle_eur_total(q4_2026(real, MOSON), {"HUF": "395,5"}).amount == 458_453
+    assert fee.bundle_eur_total(q4_2026(real, MOSON), {"HUF": "395,5"}).amount == 458_448
 
 
 def test_rate_missing(real):
@@ -150,8 +150,8 @@ def test_both_sides_in_eur(real):
 
 def test_two_invoices_for_a_bundle(real):
     gca, fgsz = q4_2026(real, MOSON).sides
-    assert [money.format_amount(line.amount, "EUR") for line in gca.invoice] == ["878.07", "849.74", "878.07"]
-    assert [money.format_amount(line.amount, "HUF") for line in fgsz.invoice] == ["263,688", "255,182", "263,688"]
+    assert [money.format_amount(line.amount, "EUR") for line in gca.invoice] == ["868.61", "868.61", "868.61"]  # 2,605.83 / 3
+    assert [money.format_amount(line.amount, "HUF") for line in fgsz.invoice] == ["260,853", "260,853", "260,852"]  # 782,558 / 3 = 260,852.67
     assert sum(line.amount for line in gca.invoice) == gca.total
     assert sum(line.amount for line in fgsz.invoice) == fgsz.total
 
@@ -171,8 +171,9 @@ def test_gas_year_across_a_calendar_year_tariff_change(real):
     assert [(p.first, p.last) for p in result.parts] == [
         (date(2026, 10, 1), date(2026, 12, 31)), (date(2027, 1, 1), date(2027, 9, 30)),
     ]
-    assert result.price == Fraction("3.97") * 92 / 365 + Fraction("4.10") * 273 / 365
-    assert money.format_amount(result.total, "EUR") == "8,473.40"
+    # Gas Connect Austria bills each month 1/12 of the tariff valid in it, not weighted by days.
+    assert result.price == (3 * Fraction("3.97") + 9 * Fraction("4.10")) / 12 == Fraction("4.0675")
+    assert money.format_amount(result.total, "EUR") == "8,473.96"  # 50,000 / 24 x 4.0675 = 8,473.958
     assert result.tariff_used == ("from 2026-01-01 for 2026-10-01 to 2026-12-31; "
                                   "from 2027-01-01 (open-ended) for 2027-01-01 to 2027-09-30")
 
@@ -180,8 +181,11 @@ def test_gas_year_across_a_calendar_year_tariff_change(real):
 def test_months_follow_the_tariff_valid_in_them(real):
     result = gca_gas_year(real)
     assert [money.format_amount(line.amount, "EUR") for line in result.invoice] == [
-        "702.45", "679.79", "702.45", "725.46", "655.25", "725.46",
-        "702.06", "725.46", "702.05", "725.46", "725.46", "702.05",
+        # Each month bills 1/12 of its own tariff: 50,000 / 24 x 3.97 / 12 = 689.236 for Oct-Dec and
+        # 50,000 / 24 x 4.10 / 12 = 711.806 for Jan-Sep; the 7 leftover cents of 8,473.96 go to the
+        # largest fractions (Oct-Dec), then to the earliest months (Jan-Apr).
+        "689.24", "689.24", "689.24", "711.81", "711.81", "711.81",
+        "711.81", "711.80", "711.80", "711.80", "711.80", "711.80",
     ]
     assert sum(line.amount for line in result.invoice) == result.total
 

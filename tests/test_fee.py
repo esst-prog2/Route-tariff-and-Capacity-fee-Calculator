@@ -6,6 +6,7 @@ import pytest
 from core import fee, money
 from core.fee import (DAY, GAS_YEAR, MONTH, QUARTER, FeeError, FeeResult,
                       calculate_fee, resolve_period)
+from core.points import Point
 from core.tariffs import DEFAULT_SAMPLE_PATH, load_tariffs
 
 from .helpers import KNOWN_POINTS, make_row, make_table
@@ -64,7 +65,7 @@ def test_demo_quarter_on_the_sample_file():
     result = calculate_fee(table, POINT, QUARTER, start, end, "50,000")
     assert isinstance(result, FeeResult)
     assert result.total == 1_565_115
-    assert [line.amount for line in result.invoice] == [527_376, 510_363, 527_376]
+    assert [line.amount for line in result.invoice] == [521_705, 521_705, 521_705]  # FGSZ: thirds, not days
 
 
 @pytest.mark.parametrize("instrument,selection,column", [
@@ -88,6 +89,121 @@ def test_capacity_conversion_is_exact_not_floating_point():
     table = table_with({"M_Dec": 3.0})
     result = calculate_fee(table, POINT, MONTH, date(2026, 12, 1), date(2026, 12, 31), "10")
     assert result.exact_total == Fraction(10, 24) * 3 == Fraction(5, 4)
+
+
+def test_capacity_typed_in_kwh_h_is_used_unchanged_at_a_kwh_h_point():
+    table = table_with({"M_Dec": 3.0})
+    result = calculate_fee(table, POINT, MONTH, date(2026, 12, 1), date(2026, 12, 31), "10", "kWh/h")
+    assert (result.unit, result.capacity, result.capacity_kwh_d) == ("kWh/h", 10, 240)
+    assert result.exact_total == 30  # 10 kWh/h x 3
+
+
+def test_capacity_typed_in_kwh_h_is_multiplied_by_24_at_a_kwh_d_point():
+    table = make_table(make_row(eic=BG_POINT.eic, direction="Exit", operator="BGTRGAZ", currency="EUR", unit="kWh/d",
+                                valid_from="2026-10-01", valid_to=None, prices={"Q4_Oct": 0.242217}))
+    start, end = resolve_period(QUARTER, year=2026, quarter=4)
+    result = calculate_fee(table, BG_POINT, QUARTER, start, end, "1,000", "kWh/h")
+    assert (result.unit, result.capacity) == ("kWh/d", 24_000)
+    assert money.format_amount(result.total, "EUR") == "5,813.21"  # 24,000 x 0.242217 = 5,813.208
+
+
+def test_the_same_capacity_in_either_unit_costs_the_same():
+    table = table_with({"Q4_Oct": 751.255428})
+    start, end = resolve_period(QUARTER, year=2026, quarter=4)
+    per_day = calculate_fee(table, POINT, QUARTER, start, end, "48000", "kWh/d")
+    per_hour = calculate_fee(table, POINT, QUARTER, start, end, "2000", "kWh/h")
+    assert per_day.exact_total == per_hour.exact_total
+    assert per_hour.total == 1_502_511  # 2000 x 751.255428 = 1,502,510.856
+
+
+def test_an_unknown_capacity_unit_is_a_bug():
+    table = table_with({"M_Dec": 3.0})
+    with pytest.raises(ValueError):
+        calculate_fee(table, POINT, MONTH, date(2026, 12, 1), date(2026, 12, 31), "10", "MWh/d")
+
+
+GCA_POINT = Point(tso="GCA", name="Mosonmagyaróvár", flow="AT>HU", eic="21Z000000000003C", direction="Exit")
+
+
+def gca_table(prices, valid_from="2026-10-01", valid_to=None):
+    return make_table(make_row(eic=GCA_POINT.eic, direction=GCA_POINT.direction, operator="GCA", currency="EUR",
+                               valid_from=valid_from, valid_to=valid_to, prices=prices))
+
+
+def test_gas_connect_austria_bills_the_tariff_rounded_to_4_decimals():
+    table = gca_table({"Q4_Oct": 0.34148})
+    start, end = resolve_period(QUARTER, year=2026, quarter=4)
+    result = calculate_fee(table, GCA_POINT, QUARTER, start, end, "500,000", "kWh/h")
+    assert result.price == Fraction("0.3415") and result.tariff_decimals == 4
+    assert money.format_amount(result.total, "EUR") == "170,750.00"  # 500,000 x 0.3415 (not 170,740.00)
+
+
+def test_gas_connect_austria_rounds_each_tariff_of_a_period_that_crosses_a_change():
+    table = make_table(
+        make_row(eic=GCA_POINT.eic, direction=GCA_POINT.direction, operator="GCA", currency="EUR",
+                 valid_from="2026-01-01", valid_to="2026-12-31", prices={"Year": 1.00004}),
+        make_row(eic=GCA_POINT.eic, direction=GCA_POINT.direction, operator="GCA", currency="EUR",
+                 valid_from="2027-01-01", valid_to=None, prices={"Year": 2.00006}),
+    )
+    start, end = resolve_period(GAS_YEAR, gas_year=2026)
+    result = calculate_fee(table, GCA_POINT, GAS_YEAR, start, end, "365", "kWh/h")
+    assert result.part_prices == (Fraction("1.0000"), Fraction("2.0001"))
+    # GCA bills 1/12 of each month's tariff: 365 x (3 x 1.0000 + 9 x 2.0001) / 12
+    assert result.exact_total == 365 * (3 * 1 + 9 * Fraction("2.0001")) / 12
+
+
+def test_other_tsos_bill_the_tariff_cell_unrounded():
+    table = table_with({"Q4_Oct": 0.34148})
+    start, end = resolve_period(QUARTER, year=2026, quarter=4)
+    result = calculate_fee(table, POINT, QUARTER, start, end, "500,000", "kWh/h")
+    assert result.tariff_decimals is None and result.total == 170_740  # 500,000 x 0.34148 HUF
+
+
+def test_equal_month_tsos_put_leftover_cents_on_the_first_months():
+    table = gca_table({"Q4_Oct": 0.1})
+    start, end = resolve_period(QUARTER, year=2026, quarter=4)
+    result = calculate_fee(table, GCA_POINT, QUARTER, start, end, "1000", "kWh/h")
+    assert result.equal_months and result.total == 10_000  # 1,000 x 0.1 = 100.00 EUR
+    assert [line.amount for line in result.invoice] == [3_334, 3_333, 3_333]  # not 33.70, 32.60, 33.70 by days
+
+
+@pytest.mark.parametrize("tso,currency,monthly", [
+    ("FGSZ", "HUF", 100), ("EUSTR", "EUR", 10_000), ("GCA", "EUR", 10_000), ("NET4GAS", "CZK", 10_000),
+])
+def test_the_four_tsos_invoice_a_gas_year_in_twelfths(tso, currency, monthly):
+    point = Point(tso=tso, name="Somewhere", flow="AT>HU", eic="21Z000000000003C", direction="Exit")
+    table = make_table(make_row(eic=point.eic, direction="Exit", operator=tso, currency=currency,
+                                valid_from="2026-10-01", valid_to=None, prices={"Year": 12.0}))
+    start, end = resolve_period(GAS_YEAR, gas_year=2026)
+    result = calculate_fee(table, point, GAS_YEAR, start, end, "100", "kWh/h")
+    assert [line.amount for line in result.invoice] == [monthly] * 12  # 100 x 12 = 1,200 / 12 = 100 (HUF, else cents)
+
+
+def gastrans_table(prices):
+    return make_table(make_row(eic=GASTRANS_POINT.eic, direction="Exit", operator="Gastran", currency="EUR",
+                               valid_from="2026-10-01", valid_to=None, prices=prices))
+
+
+def test_gastrans_invoices_a_quarter_in_thirds():
+    start, end = resolve_period(QUARTER, year=2026, quarter=4)
+    result = calculate_fee(gastrans_table({"Q4_Oct": 0.92}), GASTRANS_POINT, QUARTER, start, end, "100", "kWh/h")
+    assert result.equal_months
+    assert [line.amount for line in result.invoice] == [3_067, 3_067, 3_066]  # 92.00 / 3 = 30.666...
+
+
+def test_gastrans_still_invoices_a_gas_year_by_days():
+    start, end = resolve_period(GAS_YEAR, gas_year=2026)
+    result = calculate_fee(gastrans_table({"Year": 3.65}), GASTRANS_POINT, GAS_YEAR, start, end, "100", "kWh/h")
+    assert not result.equal_months
+    # 100 x 3.65 = 365.00 EUR, 1.00 EUR per day: Oct 31, Nov 30, Dec 31, Jan 31, Feb 28, Mar 31, Apr 30, ...
+    assert [line.amount for line in result.invoice] == [
+        3_100, 3_000, 3_100, 3_100, 2_800, 3_100, 3_000, 3_100, 3_000, 3_100, 3_100, 3_000]
+
+
+def test_a_month_product_of_an_equal_month_tso_is_one_line():
+    table = gca_table({"M_Dec": 0.5})
+    result = calculate_fee(table, GCA_POINT, MONTH, date(2026, 12, 1), date(2026, 12, 31), "100", "kWh/h")
+    assert not result.equal_months and [line.amount for line in result.invoice] == [5_000]
 
 
 # --- 6.3 monthly breakdown --------------------------------------------------------------------

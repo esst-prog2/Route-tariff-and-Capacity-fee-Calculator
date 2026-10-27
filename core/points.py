@@ -25,6 +25,7 @@ GASTRANS = "Gastran"  # the codes used in the tariff file's `System operator` co
 BULGARTRANSGAZ = "BGTRGAZ"
 EUSTREAM = "EUSTR"
 GCA = "GCA"
+NET4GAS = "NET4GAS"
 TAG = "TAG"
 
 
