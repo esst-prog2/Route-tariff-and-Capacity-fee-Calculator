@@ -52,6 +52,12 @@ def start_single_side() -> AppTest:
     return at
 
 
+def capacity_in_kwh_d(at):
+    """Tab 2's capacity box with the unit switched to kWh/d, the unit the hand-worked figures use."""
+    at.selectbox(key="fee_capacity_unit").select("kWh/d")
+    return at.text_input(key="fee_capacity")
+
+
 # --- shell -----------------------------------------------------------------------------------
 
 def test_both_tabs_render_with_the_sample_loaded():
@@ -234,7 +240,7 @@ def test_tab2_points_follow_the_tso():
 def test_tab2_demo_run_matches_the_hand_calculation():
     at = start_single_side()
     assert "positive number" in at.warning[0].value  # blank capacity: message, no result
-    at.text_input(key="fee_capacity").set_value("50000").run()
+    capacity_in_kwh_d(at).set_value("50000").run()
     assert not at.exception
     assert at.selectbox(key="fee_point_FGSZ").value.fee_label().startswith("Kiskundorozsma 2 RS>HU")
     assert at.selectbox(key="fee_q_year").value == 2026 and at.selectbox(key="fee_quarter").value == 4
@@ -242,13 +248,25 @@ def test_tab2_demo_run_matches_the_hand_calculation():
     assert metrics["Total cost (HUF)"] == "1,565,115"
     assert metrics["Capacity (kWh/h)"] == "2083.33"
     invoice = frames(at)[-1]
-    assert invoice["Amount (HUF)"].tolist() == ["527,376", "510,363", "527,376", "1,565,115"]
+    assert invoice["Amount (HUF)"].tolist() == ["521,705", "521,705", "521,705", "1,565,115"]  # 1,565,115 / 3
     assert invoice["Month"].tolist() == ["2026-10", "2026-11", "2026-12", "Total"]
+    assert any("FGSZ invoices each month as 1/3 of the quarter" in c.value for c in at.caption)
+
+
+def test_tab2_capacity_can_be_typed_in_kwh_h():
+    at = start_single_side()
+    assert at.selectbox(key="fee_capacity_unit").value == "kWh/h"  # the default
+    assert at.selectbox(key="fee_capacity_unit").options == ["kWh/h", "kWh/d"]
+    at.text_input(key="fee_capacity").set_value("2000").run()
+    assert not at.exception
+    metrics = {m.label: m.value for m in at.metric}
+    assert metrics["Capacity (kWh/h)"] == "2000.00"
+    assert metrics["Total cost (HUF)"] == "1,502,511"  # 2000 x 751.255428 = 1,502,510.86
 
 
 def test_tab2_labels_follow_the_currency_and_unit():
     at = start_single_side()
-    at.text_input(key="fee_capacity").set_value("50000")
+    capacity_in_kwh_d(at).set_value("50000")
     at.selectbox(key="fee_tso").select("BGTRGAZ").run()
     labels = at.selectbox(key="fee_point_BGTRGAZ").options
     at.selectbox(key="fee_point_BGTRGAZ").select_index(labels.index("Kireevo/Zaychar BG>RS (58Z-000000007-KZ)")).run()
@@ -264,7 +282,7 @@ def test_tab2_labels_follow_the_currency_and_unit():
 
 def test_tab2_interruptible_point_says_so():
     at = start_single_side()
-    at.text_input(key="fee_capacity").set_value("50000")
+    capacity_in_kwh_d(at).set_value("50000")
     labels = at.selectbox(key="fee_point_FGSZ").options
     at.selectbox(key="fee_point_FGSZ").select_index(
         labels.index("Kiskundorozsma 2 HU>RS (21Z000000000505P) - Interruptible")).run()
@@ -275,7 +293,7 @@ def test_tab2_interruptible_point_says_so():
 @pytest.mark.parametrize("instrument,lines", [("gas_year", 12 + 1), ("quarter", 3 + 1), ("month", 1 + 1), ("day", 1 + 1)])
 def test_tab2_every_instrument_produces_an_invoice_that_sums_to_the_total(instrument, lines):
     at = start_single_side()
-    at.text_input(key="fee_capacity").set_value("50000")
+    capacity_in_kwh_d(at).set_value("50000")
     at.selectbox(key="fee_instrument").select(instrument).run()
     assert not at.exception, [e.value for e in at.exception]
     invoice = frames(at)[-1]
@@ -322,13 +340,13 @@ def test_tab2_booking_type_changes_the_dropdowns(real_app):
 def test_tab2_bundle_shows_both_sides_and_waits_for_the_rate(real_app):
     at = real_app
     assert at.selectbox(key="fee_bundle").value.label() == "Mosonmagyaróvár AT>HU (Gas Connect Austria + FGSZ)"
-    at.text_input(key="fee_capacity").set_value("50,000").run()
+    capacity_in_kwh_d(at).set_value("50,000").run()
     assert not at.exception, [e.value for e in at.exception]
     totals = [m.value for m in at.metric if m.label.startswith("Total cost")]
-    assert totals == ["2,605.88", "782,558"]
+    assert totals == ["2,605.83", "782,558"]
     invoices = frames(at)[-2:]
-    assert invoices[0]["Amount (EUR)"].tolist() == ["878.07", "849.74", "878.07", "2,605.88"]
-    assert invoices[1]["Amount (HUF)"].tolist() == ["263,688", "255,182", "263,688", "782,558"]
+    assert invoices[0]["Amount (EUR)"].tolist() == ["868.61", "868.61", "868.61", "2,605.83"]
+    assert invoices[1]["Amount (HUF)"].tolist() == ["260,853", "260,853", "260,852", "782,558"]
     assert [t.key for t in at.text_input if t.key.startswith("fee_rate_")] == ["fee_rate_HUF"]
     assert any("HUF per EUR rate" in i.value for i in at.info)
     assert "Bundle total (EUR)" not in [m.label for m in at.metric]
@@ -336,11 +354,11 @@ def test_tab2_bundle_shows_both_sides_and_waits_for_the_rate(real_app):
 
 def test_tab2_bundle_total_after_the_rate(real_app):
     at = real_app
-    at.text_input(key="fee_capacity").set_value("50000").run()  # the rate box appears with a result
+    capacity_in_kwh_d(at).set_value("50000").run()  # the rate box appears with a result
     at.text_input(key="fee_rate_HUF").set_value("395.5").run()
     assert not at.exception
     metrics = {m.label: m.value for m in at.metric}
-    assert metrics["Bundle total (EUR)"] == "4,584.53"
+    assert metrics["Bundle total (EUR)"] == "4,584.48"
     assert any("at 1 EUR = 395.5 HUF" in c.value for c in at.caption)
 
 
@@ -349,7 +367,7 @@ def test_tab2_bundle_with_both_sides_in_eur_has_no_rate_box(real_app):
     options = at.selectbox(key="fee_bundle").options
     at.selectbox(key="fee_bundle").select_index(
         options.index("Kulata/Sidirokastron BG>GR (Bulgartransgaz + DESFA)"))
-    at.text_input(key="fee_capacity").set_value("50000").run()
+    capacity_in_kwh_d(at).set_value("50000").run()
     assert not at.exception
     assert not [t for t in at.text_input if t.key.startswith("fee_rate_")]
     assert "Bundle total (EUR)" in [m.label for m in at.metric]
@@ -358,7 +376,7 @@ def test_tab2_bundle_with_both_sides_in_eur_has_no_rate_box(real_app):
 def test_tab2_lng_entry_has_no_fx(real_app):
     at = real_app
     at.radio(key="fee_booking").set_value("LNG entry").run()
-    at.text_input(key="fee_capacity").set_value("50000").run()
+    capacity_in_kwh_d(at).set_value("50000").run()
     assert not at.exception
     assert [t.key for t in at.text_input] == ["route_rate_HUF", "fee_capacity"]
     assert len([m for m in at.metric if m.label.startswith("Total cost")]) == 1
@@ -372,15 +390,15 @@ def test_tab2_gas_year_shows_both_tariffs_and_splits_the_invoice(real_app):
     at.selectbox(key="fee_point_GCA").select_index(options.index("Mosonmagyaróvár AT>HU (21Z000000000003C)"))
     at.selectbox(key="fee_instrument").select("gas_year").run()
     at.selectbox(key="fee_gas_year").select(2026)
-    at.text_input(key="fee_capacity").set_value("50000").run()
+    capacity_in_kwh_d(at).set_value("50000").run()
     assert not at.exception, [e.value for e in at.exception]
     metrics = {m.label: m.value for m in at.metric}
     assert metrics["Price (Year, EUR per kWh/h)"] == "3.9700 / 4.1000"
-    assert metrics["Total cost (EUR)"] == "8,473.40"
+    assert metrics["Total cost (EUR)"] == "8,473.96"
     assert any("from 2026-01-01 for 2026-10-01 to 2026-12-31" in c.value for c in at.caption)
     invoice = frames(at)[-1]
-    assert invoice["Amount (EUR)"].tolist()[:4] == ["702.45", "679.79", "702.45", "725.46"]
-    assert invoice["Amount (EUR)"].tolist()[-1] == "8,473.40"
+    assert invoice["Amount (EUR)"].tolist()[:4] == ["689.24", "689.24", "689.24", "711.81"]
+    assert invoice["Amount (EUR)"].tolist()[-1] == "8,473.96"
 
 
 def test_tab2_repeated_tariff_is_shown_once(real_app):
@@ -391,7 +409,7 @@ def test_tab2_repeated_tariff_is_shown_once(real_app):
     at.selectbox(key="fee_point_EUSTR").select_index(options.index("Balassagyarmat SK>HU (21Z000000000358C)"))
     at.selectbox(key="fee_instrument").select("gas_year").run()
     at.selectbox(key="fee_gas_year").select(2025)
-    at.text_input(key="fee_capacity").set_value("50000").run()
+    capacity_in_kwh_d(at).set_value("50000").run()
     assert not at.exception, [e.value for e in at.exception]
     assert {m.label: m.value for m in at.metric}["Price (Year, EUR per kWh/h)"] == "8.7600 / 9.6360"
 

@@ -14,8 +14,8 @@ from fractions import Fraction
 from typing import Mapping
 
 from . import periods
-from .money import CURRENCY_DECIMALS, EUR, parse_fx_rate, parse_number, round_minor, split_by_weights
-from .points import Bundle, Point
+from .money import CURRENCY_DECIMALS, EUR, parse_fx_rate, parse_number, round_minor, round_places, split_by_weights
+from .points import EUSTREAM, FGSZ, GASTRANS, GCA, NET4GAS, Bundle, Point
 from .tariffs import HOURS_PER_UNIT, NoTariffRow, ProductPart, TariffTable
 
 GAS_YEAR = "gas_year"
@@ -25,7 +25,21 @@ DAY = "day"
 INSTRUMENTS = (GAS_YEAR, QUARTER, MONTH, DAY)
 INSTRUMENT_LABELS = {GAS_YEAR: "Gas year", QUARTER: "Quarter", MONTH: "Month", DAY: "Day"}
 
-CAPACITY_MESSAGE = "Capacity must be a positive number (kWh/d)."
+CAPACITY_MESSAGE = "Capacity must be a positive number."
+# TSOs that bill the tariff cell rounded to this many decimals, not the cell as the file gives it.
+TARIFF_DECIMALS = {GCA: 4}
+
+# The products each TSO invoices in equal months (1/12 of a gas year, 1/3 of a quarter),
+# at the tariff valid in that month, instead of by the month's number of days.
+EQUAL_MONTH_INSTRUMENTS = {
+    FGSZ: (GAS_YEAR, QUARTER),
+    EUSTREAM: (GAS_YEAR, QUARTER),
+    GCA: (GAS_YEAR, QUARTER),
+    NET4GAS: (GAS_YEAR, QUARTER),
+    GASTRANS: (QUARTER,),
+}
+
+CAPACITY_UNITS = ("kWh/h", "kWh/d")  # units the capacity can be typed in; tab 2 starts on the first
 
 
 @dataclass(frozen=True)
@@ -54,7 +68,7 @@ class FeeResult:
     instrument: str
     start: date
     end: date
-    capacity_kwh_d: Fraction
+    capacity_kwh_d: Fraction  # the requested capacity, converted to kWh/d if typed in kWh/h
     capacity: Fraction  # in `unit`
     unit: str  # kWh/h or kWh/d
     currency: str
@@ -66,7 +80,9 @@ class FeeResult:
     total: int  # minor units of the currency: whole HUF, else cents
     invoice: tuple[InvoiceLine, ...]
     parts: tuple[ProductPart, ...] = ()  # the stretches of the period priced from one row each
-    part_prices: tuple[Fraction, ...] = ()  # the price cell of each part's row, as in the tariff file
+    part_prices: tuple[Fraction, ...] = ()  # the price cell of each part's row, as billed (see `tariff_decimals`)
+    tariff_decimals: int | None = None  # the decimals the TSO rounds its tariff to, None when it bills the cell as is
+    equal_months: bool = False  # each month is 1/12 (gas year) or 1/3 (quarter) of the product, not weighted by days
 
 
 @dataclass(frozen=True)
@@ -141,22 +157,48 @@ def calculate_fee(
     start: date,
     end: date,
     capacity_text,
+    capacity_unit: str = "kWh/d",
 ) -> FeeResult | FeeError:
+    """`capacity_text` is the requested capacity in `capacity_unit` (one of `CAPACITY_UNITS`)."""
+    if capacity_unit not in CAPACITY_UNITS:
+        raise ValueError(f"Unknown capacity unit {capacity_unit!r}")
     try:
-        capacity_kwh_d = parse_number(capacity_text)
+        requested = parse_number(capacity_text)
     except ValueError:
         return FeeError(CAPACITY_MESSAGE)
-    if capacity_kwh_d <= 0:
+    if requested <= 0:
         return FeeError(CAPACITY_MESSAGE)
+    capacity_kwh_d = requested * HOURS_PER_UNIT[capacity_unit]
     if instrument not in INSTRUMENTS or start is None or end is None or end < start:
         return FeeError("Choose a product period.")
 
-    cell = lambda row: _price_cell(row, instrument, start)[1]
+    decimals = TARIFF_DECIMALS.get(point.tso)
+
+    def cell(row) -> Fraction:
+        price = _price_cell(row, instrument, start)[1]
+        return price if decimals is None else round_places(price, decimals)
+
     try:
         price, parts = table.product_price(*point.key, start, end, cell)
     except NoTariffRow as missing:
         return NoTariffError(
             f"No tariff exists for {point.tso_name} {point.cleaned_name} on {missing.day.isoformat()}.", missing.day)
+
+    # Each month's own price: the cell of the row valid in it (day-weighted if a row changes inside the month).
+    slices = periods.month_slices(start, end)
+    month_prices = [
+        sum((cell(p.row) * periods.days_in_period(max(p.first, s.first), min(p.last, s.last))
+             for p in parts if p.first <= s.last and s.first <= p.last), Fraction(0)) / s.days
+        for s in slices
+    ]
+    equal_months = instrument in EQUAL_MONTH_INSTRUMENTS.get(point.tso, ())
+    if equal_months:
+        # Every month counts the same, whatever its number of days.
+        price = sum(month_prices, Fraction(0)) / len(slices)
+        weights = month_prices
+    else:
+        # Each month's share of the total is its exact cost under the rows valid in it.
+        weights = [month_price * s.days for month_price, s in zip(month_prices, slices)]
 
     row = parts[0].row
     column = _price_cell(row, instrument, start)[0]
@@ -164,14 +206,6 @@ def calculate_fee(
     exact_total = capacity * price
     total = round_minor(exact_total, row.currency)
 
-    # Each month's share of the total is its exact cost under the rows valid in it.
-    days = periods.days_in_period(start, end)
-    slices = periods.month_slices(start, end)
-    weights = [
-        sum((cell(p.row) * periods.days_in_period(max(p.first, s.first), min(p.last, s.last))
-             for p in parts if p.first <= s.last and s.first <= p.last), Fraction(0)) / days
-        for s in slices
-    ]
     if not any(weights):  # a zero price: split by days
         weights = [s.days for s in slices]
     amounts = split_by_weights(total, weights)
@@ -182,6 +216,7 @@ def calculate_fee(
     return FeeResult(
         point, instrument, start, end, capacity_kwh_d, capacity, row.unit, row.currency, row.capacity_type,
         column, price, tariff_used, exact_total, total, invoice, tuple(parts), tuple(cell(p.row) for p in parts),
+        decimals, equal_months,
     )
 
 
@@ -196,11 +231,12 @@ def calculate_bundle_fee(
     start: date,
     end: date,
     capacity_text,
+    capacity_unit: str = "kWh/d",
 ) -> BundleFeeResult | FeeError:
-    """Both sides priced independently, each in its own currency and unit."""
+    """Both sides priced independently for the same requested capacity, each in its own currency and unit."""
     results = []
     for side in bundle.sides:
-        result = calculate_fee(table, side, instrument, start, end, capacity_text)
+        result = calculate_fee(table, side, instrument, start, end, capacity_text, capacity_unit)
         if isinstance(result, NoTariffError):
             side_text = "exit" if side.direction == "Exit" else "entry"
             return NoTariffError(f"No tariff exists for the {side.tso_name} {side_text} side "

@@ -154,11 +154,11 @@ def test_sample_route_figures_worked_out_by_hand(sample):
 
 def test_sample_capacity_fees_worked_out_by_hand(sample):
     start, end = fee.resolve_period(fee.QUARTER, year=2026, quarter=4)
-    # 50,000 kWh/d / 24 = 2083.333... kWh/h x 751.255428 HUF = 1,565,115.48 -> 1,565,115 HUF, split 31:30:31 by days.
+    # 50,000 kWh/d / 24 = 2083.333... kWh/h x 751.255428 HUF = 1,565,115.48 -> 1,565,115 HUF; FGSZ invoices a quarter in thirds: 1,565,115 / 3 = 521,705.
     result = fee.calculate_fee(sample, point("FGSZ", "Kiskundorozsma 2", "RS>HU"), fee.QUARTER, start, end, "50000")
     assert money.format_decimal(result.capacity, 2) == "2083.33"
     assert result.total == 1_565_115
-    assert [line.amount for line in result.invoice] == [527_376, 510_363, 527_376]
+    assert [line.amount for line in result.invoice] == [521_705, 521_705, 521_705]
     # Per kWh/d, no division by 24: 50,000 x 0.2422174 EUR = 12,110.87 EUR.
     bg_fee = fee.calculate_fee(sample, point("BGTRGAZ", "Kireevo/Zaychar", "BG>RS"), fee.QUARTER, start, end, "50000")
     assert money.format_amount(bg_fee.total, "EUR") == "12,110.87"

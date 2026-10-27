@@ -48,6 +48,12 @@ def round_whole(amount: Fraction) -> int:
     return sign * math.floor(abs(amount) + Fraction(1, 2))
 
 
+def round_places(amount: Fraction, places: int) -> Fraction:
+    """Exact value rounded to `places` decimals, halves away from zero."""
+    scale = 10 ** places
+    return Fraction(round_whole(amount * scale), scale)
+
+
 def split_by_weights(total: int, weights: Sequence[int | Fraction]) -> list[int]:
     """Split a whole amount in proportion to `weights` (whole or exact numbers).
 

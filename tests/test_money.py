@@ -74,3 +74,10 @@ def test_ron_czk_and_pln_round_to_cents(currency):
 ])
 def test_format_exact_keeps_every_digit_and_drops_trailing_zeros(value, text):
     assert money.format_exact(value) == text
+
+
+def test_round_places_rounds_halves_up_exactly():
+    from core.money import round_places
+    assert round_places(Fraction("0.34148"), 4) == Fraction("0.3415")
+    assert round_places(Fraction("1.25082191"), 4) == Fraction("1.2508")
+    assert round_places(Fraction("0.00005"), 4) == Fraction("0.0001")

@@ -316,7 +316,10 @@ def show_side(result: fee.FeeResult, invoice_title: str) -> None:
     middle.metric(f"Price ({result.price_column}, {currency} per {result.unit})", prices)
     right.metric(f"Total cost ({currency})", money.format_amount(result.total, currency))
     rounding = "whole forints" if money.CURRENCY_DECIMALS[currency] == 0 else "cents"
-    st.caption(f"Tariff used: {result.tariff_used}. All amounts are in {currency}; the total is rounded to {rounding}.")
+    rounded = (f" {result.point.tso_name} bills its tariff rounded to {result.tariff_decimals} decimals."
+               if result.tariff_decimals is not None else "")
+    st.caption(f"Tariff used: {result.tariff_used}.{rounded} "
+               f"All amounts are in {currency}; the total is rounded to {rounding}.")
     if result.capacity_type == INTERRUPTIBLE:
         st.warning("This point has no Firm tariff, so Interruptible capacity is priced; the TSO can interrupt it.")
 
@@ -324,6 +327,10 @@ def show_side(result: fee.FeeResult, invoice_title: str) -> None:
              for line in result.invoice]
     lines.append(("Total", sum(line.days for line in result.invoice), money.format_amount(result.total, currency)))
     st.markdown(f"**{invoice_title}**")
+    if result.equal_months:
+        share = "1/12 of the gas year" if result.instrument == fee.GAS_YEAR else "1/3 of the quarter"
+        st.caption(f"{result.point.tso_name} invoices each month as {share} at the tariff valid in it, "
+                   "whatever the month's number of days.")
     st.dataframe(pd.DataFrame(lines, columns=["Month", "Days", f"Amount ({currency})"]), hide_index=True, width="stretch")
 
 
@@ -374,7 +381,9 @@ def fee_tab(table, catalog: points.Catalog) -> None:
         selection["day"] = st.date_input("Day", value=date(2026, 12, 5), min_value=date(2000, 1, 1),
                                          max_value=date(2100, 12, 31), format="YYYY-MM-DD", key="fee_day")
 
-    capacity = st.text_input("Requested capacity (kWh/d)", value="", placeholder="e.g. 50000", key="fee_capacity")
+    left, right = st.columns([3, 1])
+    capacity = left.text_input("Requested capacity", value="", placeholder="e.g. 50000", key="fee_capacity")
+    capacity_unit = right.selectbox("Unit", fee.CAPACITY_UNITS, key="fee_capacity_unit")
 
     period = fee.resolve_period(instrument, **selection)
     if isinstance(period, fee.FeeError):
@@ -382,7 +391,7 @@ def fee_tab(table, catalog: points.Catalog) -> None:
         return
     product = f"{fee.INSTRUMENT_LABELS[instrument].lower()} {dates_text(*period)}"
     if isinstance(booked, Bundle):
-        result = fee.calculate_bundle_fee(table, booked, instrument, period[0], period[1], capacity)
+        result = fee.calculate_bundle_fee(table, booked, instrument, period[0], period[1], capacity, capacity_unit)
         if isinstance(result, fee.FeeError):
             st.warning(result.message)
             return
@@ -394,7 +403,7 @@ def fee_tab(table, catalog: points.Catalog) -> None:
         show_bundle_total(result)
         return
 
-    result = fee.calculate_fee(table, booked, instrument, period[0], period[1], capacity)
+    result = fee.calculate_fee(table, booked, instrument, period[0], period[1], capacity, capacity_unit)
     if isinstance(result, fee.FeeError):
         st.warning(result.message)
         return
