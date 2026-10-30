@@ -178,6 +178,10 @@ class TariffTable:
         days = periods.days_in_period(first, last)
         return sum((cell(part.row) * part.days / days for part in parts), Fraction(0)), parts
 
+    def rows(self, operator: str, eic: str, direction: str) -> list[TariffRow]:
+        """The point's rows, by `Valid from`."""
+        return list(self._rows.get((operator, eic, direction), []))
+
     def earliest_valid_from(self, operator: str, eic: str, direction: str) -> date | None:
         rows = self._rows.get((operator, eic, direction))
         return rows[0].valid_from if rows else None
