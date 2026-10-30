@@ -165,3 +165,4 @@ One line per decision: date — what was decided — who decided it (user or Cla
 - 2026-10-30: `excel/capacity_fee_calculator.xlsx` is built from the real tariff file and committed on `excel-fee-calculator` together with the builder, the tests and the README section; the hand click-through in Excel (task 7.1) is left to the user. Decided by: Claude.
 - 2026-10-30: `.gitignore` gets an exception for `excel/*.xlsx`, as the workbook holds only the public tariffs of `data/real/`; it is committed in a follow-up commit. Decided by: Claude.
 - 2026-10-30: The user checked `excel/capacity_fee_calculator.xlsx` by hand in Excel and it works (task 7.1); all 19 tasks of `excel-fee-calculator` are done. Decided by: user.
+- 2026-10-30: The `excel-fee-calculator` branch is merged into `main` (fast-forward) and pushed to `origin`. Decided by: user.
