@@ -4,6 +4,8 @@ data/private/
 *.xlsx
 !data/sample/*.xlsx
 !data/real/*.xlsx
+# The Capacity Fee Workbook, built from the real tariffs only (python build_workbook.py).
+!excel/*.xlsx
 
 __pycache__/
 .pytest_cache/
