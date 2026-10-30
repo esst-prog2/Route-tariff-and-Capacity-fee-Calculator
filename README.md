@@ -54,3 +54,16 @@ python -m streamlit run app.py     # uses the real tariffs in data/real/
 python -m pytest                   # unit, app and acceptance tests
 ```
 To use another file, such as the synthetic sample, point the app at it with the `FGSZ_TARIFF_FILE` environment variable (PowerShell: `$env:FGSZ_TARIFF_FILE = "data/sample/tariffs_sample.xlsx"`, then `python -m streamlit run app.py`), or upload it in the sidebar for one session. The raw work export, which still has colleagues' names in it, stays in `data/private/` (git-ignored, never committed). The parser reports missing columns and unusable rows in plain language instead of crashing.
+
+## The Capacity Fee Workbook (tab 2 in Excel)
+`excel/capacity_fee_calculator.xlsx` does everything the Capacity Fee Calculator tab does, in one Excel file that anyone can open from a shared folder: dropdowns for the booking type, TSO, point, product and period, the capacity and its unit, then each side's price, total and monthly invoice, and a bundle's EUR total once its exchange rates are typed in. It is a plain `.xlsx` with formulas only (no macros, so no "Enable content" prompt), for Microsoft 365 or Excel 2021, and works in any Excel language; only the yellow cells are meant to be edited (the sheet is protected without a password).
+
+The workbook is built from the tariff file, never edited by hand. After a new tariff export:
+```
+python build_workbook.py                          # from data/real/tariffs_real.xlsx
+python build_workbook.py path/to/export.xlsx      # or from another file
+python -m pytest -m excel                         # recalculate it in Excel and compare it with the app
+```
+The build uses the app's own tariff loading, point catalog and rules, and stops with the app's message (writing nothing) on a file the app rejects. The Excel check needs Windows with Excel installed; it fills in the workbook for every point, product and capacity unit and compares each figure with the app (it is skipped in a plain `python -m pytest`). Then copy the new file over the one on the server; marking the server copy read-only keeps colleagues from saving over it.
+
+A change to a tab 2 fee rule must also be made in the workbook (`core/workbook.py`) and in the `excel-fee-workbook` spec; the Excel check fails until both agree.
