@@ -166,3 +166,5 @@ One line per decision: date — what was decided — who decided it (user or Cla
 - 2026-10-30: `.gitignore` gets an exception for `excel/*.xlsx`, as the workbook holds only the public tariffs of `data/real/`; it is committed in a follow-up commit. Decided by: Claude.
 - 2026-10-30: The user checked `excel/capacity_fee_calculator.xlsx` by hand in Excel and it works (task 7.1); all 19 tasks of `excel-fee-calculator` are done. Decided by: user.
 - 2026-10-30: The `excel-fee-calculator` branch is merged into `main` (fast-forward) and pushed to `origin`. Decided by: user.
+- 2026-10-30: The `excel-fee-calculator` change is archived to `openspec/changes/archive/2026-10-30-excel-fee-calculator/` and its spec synced to `openspec/specs/excel-fee-workbook/spec.md`, with the rate-cell sentence changed to match the built workbook: a cell for each of CZK, HUF, PLN and RON, greyed out when the booking does not need it. Decided by: user (sync), Claude (wording).
+- 2026-10-30: The archive of `excel-fee-calculator` and the new `excel-fee-workbook` spec are committed on `main` and pushed to `origin`. Decided by: user.

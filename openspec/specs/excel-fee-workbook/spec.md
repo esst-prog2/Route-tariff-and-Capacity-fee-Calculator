@@ -1,8 +1,10 @@
+# excel-fee-workbook Specification
+
 ## Purpose
 
 Gives colleagues the Capacity Fee Calculator as one Excel workbook that they open from a shared folder, with dropdowns and the same figures as tab 2 of the app, built from the tariff file and checked against the app.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Workbook file
 The workbook SHALL be one plain `.xlsx` file with formulas only and no macros, external links, data connections or add-ins, so that it opens and calculates in Microsoft 365 or Excel 2021 for Windows without any "Enable content" prompt. Its text SHALL be in English. It SHALL work in any Excel language and regional setting (for example Hungarian, with decimal commas), with dates shown as YYYY-MM-DD. It SHALL have one visible sheet, "Calculator", which holds all inputs and results. The data and calculation sheets SHALL be hidden. The Calculator sheet SHALL be protected without a password, so that formulas cannot be overwritten by accident while the input cells stay editable, and anyone who needs to can unprotect it.
@@ -96,7 +98,7 @@ For each side of the booking, under the inputs, the Calculator sheet SHALL show 
 - a monthly invoice table (month as YYYY-MM, days, amount) with a Total line;
 - the equal-month caption where it applies (for example "FGSZ invoices each month as 1/3 of the quarter at the tariff valid in it, whatever the month's number of days.").
 
-Amounts SHALL be labelled with their currency. For a bundle, the sheet SHALL show both sides. It SHALL also show one rate cell for each side currency other than EUR, labelled "<currency> per 1 EUR" and blank in a freshly built workbook, and then either the bundle's EUR total with the rates used, or a message naming the missing or invalid rate(s). A booking with no tariff for the period SHALL show the app's message naming the point (or, for a bundle, the side) and the first day without a tariff, and no amounts.
+Amounts SHALL be labelled with their currency. For a bundle, the sheet SHALL show both sides. It SHALL also show one rate cell for each currency other than EUR that a TSO in scope bills in (CZK, HUF, PLN and RON), labelled "<currency> per 1 EUR" and blank in a freshly built workbook. The cells the booking does not need SHALL be greyed out and marked as not used, so that a typed rate stays with its currency when the bundle changes. The sheet SHALL then show either the bundle's EUR total with the rates used, or a message naming the missing or invalid rate(s). A booking with no tariff for the period SHALL show the app's message naming the point (or, for a bundle, the side) and the first day without a tariff, and no amounts.
 
 #### Scenario: Rate missing
 - **WHEN** the default bundle is calculated and the HUF per 1 EUR cell is blank
@@ -104,7 +106,7 @@ Amounts SHALL be labelled with their currency. For a bundle, the sheet SHALL sho
 
 #### Scenario: Both sides in EUR
 - **WHEN** the bundled point is Kulata/Sidirokastron BG>GR (Bulgartransgaz + DESFA)
-- **THEN** no rate cell is asked for and the EUR total is shown straight away
+- **THEN** every rate cell is greyed out as not used and the EUR total is shown straight away
 
 #### Scenario: No tariff for the period
 - **WHEN** a gas year is chosen for a point and a side has no tariff row on the first day of the period
