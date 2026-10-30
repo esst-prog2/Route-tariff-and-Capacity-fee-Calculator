@@ -40,6 +40,6 @@
 
 ## 7. Delivery
 
-- [ ] 7.1 Build `excel/capacity_fee_calculator.xlsx` from the real tariff file, open it in Excel by hand and click through Bundled, Single side and LNG entry for each instrument. Verify that there is no warning on opening, and that the default bundle with 50,000 kWh/d and 395.5 HUF per EUR shows 2,605.83 EUR, 782,558 HUF and 4,584.48 EUR
+- [x] 7.1 Build `excel/capacity_fee_calculator.xlsx` from the real tariff file, open it in Excel by hand and click through Bundled, Single side and LNG entry for each instrument. Verify that there is no warning on opening, and that the default bundle with 50,000 kWh/d and 395.5 HUF per EUR shows 2,605.83 EUR, 782,558 HUF and 4,584.48 EUR
 - [x] 7.2 Add a README section on what the workbook is, how to build it (`python build_workbook.py`), running the Excel check, rebuilding after a new tariff export, copying it to the server (read-only suggested), and that a tab 2 rule change must also change the workbook. Verify the commands in it run as written
 - [x] 7.3 Run the full suite (`python -m pytest -q`, and `-m excel`) and verify that everything passes. Log the decisions taken during implementation in `PLANNING_LOG.md`, and commit on `excel-fee-calculator` (not `main`)
