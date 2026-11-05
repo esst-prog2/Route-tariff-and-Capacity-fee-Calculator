@@ -186,3 +186,4 @@ One line per decision: date — what was decided — who decided it (user or Cla
 - 2026-11-05: The user checked tab 3 in the running app and the figures match (task 4.3); all 11 tasks of `eustream-bank-guarantee` are done. Decided by: user.
 - 2026-11-05: The `bank-guarantee-eustream` branch is merged into `main` and the `eustream-bank-guarantee` change is archived. Decided by: user.
 - 2026-11-05: The `eustream-bank-guarantee` change is archived to `openspec/changes/archive/2026-11-05-eustream-bank-guarantee/` and its spec synced to `openspec/specs/bank-guarantee-calculator/spec.md` unchanged. Decided by: user (sync).
+- 2026-11-05: `main` is pushed to `origin` and the merged local branch `bank-guarantee-eustream` is deleted (it was never pushed). Decided by: user.
