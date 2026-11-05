@@ -19,4 +19,4 @@
 
 - [x] 4.1 Add a README section on tab 3 (inputs, the Eustream rule with the Q4 2026 example, CEGHIX of the day before the booking, what is not covered); verify the README figures match the tests
 - [x] 4.2 Run the full test suite (`python -m pytest`) and `openspec validate eustream-bank-guarantee --strict`; verify both pass
-- [ ] 4.3 User clicks through tab 3 in the running app (`streamlit run app.py`) with the spec's bookings and confirms the figures
+- [x] 4.3 User clicks through tab 3 in the running app (`streamlit run app.py`) with the spec's bookings and confirms the figures
