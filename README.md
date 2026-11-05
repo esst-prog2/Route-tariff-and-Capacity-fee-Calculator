@@ -67,3 +67,33 @@ python -m pytest -m excel                         # recalculate it in Excel and 
 The build uses the app's own tariff loading, point catalog and rules, and stops with the app's message (writing nothing) on a file the app rejects. The Excel check needs Windows with Excel installed; it fills in the workbook for every point, product and capacity unit and compares each figure with the app (it is skipped in a plain `python -m pytest`). Then copy the new file over the one on the server; marking the server copy read-only keeps colleagues from saving over it.
 
 A change to a tab 2 fee rule must also be made in the workbook (`core/workbook.py`) and in the `excel-fee-workbook` spec; the Excel check fails until both agree.
+
+## The Bank Guarantee Calculator (tab 3)
+Tab 3 works out the financial guarantee (in practice a bank guarantee) a TSO asks for, for a list of bookings. So far it knows Eustream's rule, from section 7.6.2 of the Eustream Operational Order (24 July 2025).
+
+**Inputs.** For each booking you choose:
+- a TSO (only Eustream for now) and one of its network points;
+- a product and period, and a capacity in kWh/h or kWh/d, as on tab 2;
+- a stage: **Capacity auction** or **Booked capacity**.
+
+At an auction the guarantee covers only the capacity fee. Once the capacity is booked, it also covers the GfON (Eustream's neutrality fee). A booked capacity needs the CEGHIX in EUR/MWh: the value valid on the day before the booking. You type it in, because the app has no index feed.
+
+**The list.** "Add to list" adds the booking as a row. Rows can be selected and removed, or the list cleared, and the list lasts for the browser session. For each row the table shows the capacity fee, GfON fee, capacity fee guarantee, GfON fee guarantee and total guarantee in EUR, with a total row underneath.
+
+**The Eustream rule:**
+- The capacity fee is tab 2's figure.
+- GfON = the volume at full use of the capacity (24 hours a gas day) in MWh × (CEGHIX + 1) × 0.85 / 100 EUR/MWh.
+- For a gas year or a quarter, each guarantee is the two most expensive months. For a month or a day, it is the whole fee.
+
+For example, Balassagyarmat SK>HU, 2026 Q4, 100,000 kWh/h:
+- The capacity fee is 361,344.00 EUR, invoiced as 3 × 120,448.00.
+- The capacity fee guarantee is 240,896.00 EUR.
+- At CEGHIX 30 the GfON rate is 0.2635 EUR/MWh, and the volume is 220,800 MWh. The GfON fee is 58,180.80 EUR and its guarantee (October and December, 148,800 MWh) is 39,208.80 EUR.
+- The guarantee is 280,104.80 EUR for booked capacity, or 240,896.00 EUR at the auction.
+
+Not covered yet:
+- other TSOs;
+- the imbalance guarantee (7.6.3) and amounts set after a credit check (7.6.5);
+- Eustream's domestic point, which the app's point catalog leaves out.
+
+The rules live in `core/guarantee.py`, one function per TSO in `GUARANTEE_RULES`.

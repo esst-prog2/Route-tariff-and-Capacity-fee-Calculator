@@ -60,9 +60,10 @@ def capacity_in_kwh_d(at):
 
 # --- shell -----------------------------------------------------------------------------------
 
-def test_both_tabs_render_with_the_sample_loaded():
+def test_all_tabs_render_with_the_sample_loaded():
     at = start_app()
-    assert [tab.label for tab in at.tabs] == ["Route Tariff Calculator", "Capacity Fee Calculator"]
+    assert [tab.label for tab in at.tabs] == [
+        "Route Tariff Calculator", "Capacity Fee Calculator", "Bank Guarantee Calculator"]
     assert at.radio(key="fee_booking").options == ["Bundled", "Single side", "LNG entry"]
     assert at.radio(key="fee_booking").value == "Bundled"
     assert "tariffs_sample.xlsx" in at.sidebar.caption[0].value
@@ -311,7 +312,7 @@ def test_tab2_invalid_capacity_is_a_message():
 
 def test_tab2_has_no_fx_input():
     at = start_single_side()
-    assert [t.key for t in at.text_input] == ["route_rate_HUF", "fee_capacity"]
+    assert [t.key for t in at.text_input if not t.key.startswith("guar_")] == ["route_rate_HUF", "fee_capacity"]
 
 
 # --- tab 2 booking types and bundles (real tariff file) -------------------------------------------
@@ -378,7 +379,7 @@ def test_tab2_lng_entry_has_no_fx(real_app):
     at.radio(key="fee_booking").set_value("LNG entry").run()
     capacity_in_kwh_d(at).set_value("50000").run()
     assert not at.exception
-    assert [t.key for t in at.text_input] == ["route_rate_HUF", "fee_capacity"]
+    assert [t.key for t in at.text_input if not t.key.startswith("guar_")] == ["route_rate_HUF", "fee_capacity"]
     assert len([m for m in at.metric if m.label.startswith("Total cost")]) == 1
 
 
@@ -512,7 +513,7 @@ def test_excluded_rows_are_reported_but_the_app_still_works(tmp_path, monkeypatc
     at.run()
     assert not at.exception, [e.value for e in at.exception]
     assert any("excluded" in expander.label for expander in at.sidebar.expander)
-    assert len(at.tabs) == 2
+    assert len(at.tabs) == 3
 
 
 def test_a_point_without_a_flow_in_its_name_is_listed_in_the_sidebar(tmp_path, monkeypatch):
@@ -529,7 +530,7 @@ def test_a_point_without_a_flow_in_its_name_is_listed_in_the_sidebar(tmp_path, m
     at.run()
     assert not at.exception, [e.value for e in at.exception]
     assert any("1 point(s) left out" in expander.label for expander in at.sidebar.expander)
-    assert len(at.tabs) == 2
+    assert len(at.tabs) == 3
 
 
 def test_a_border_point_without_a_map_position_is_named_under_the_map(tmp_path, monkeypatch):
@@ -559,3 +560,120 @@ def test_missing_configured_file_is_a_message(tmp_path, monkeypatch):
     at.run()
     assert not at.exception
     assert any("not found" in error.value for error in at.error)
+
+
+# --- tab 3 (real tariff file) -------------------------------------------------------------------
+
+BALASSAGYARMAT_EXIT = "Balassagyarmat SK>HU"
+
+
+def add_booking(at, instrument="quarter", stage="Booked capacity", capacity="100000", unit="kWh/h", ceghix="30",
+                **period):
+    """Fill in tab 3 for Balassagyarmat SK>HU and press Add to list. `period` sets the picker
+    keys without their `guar_` prefix (e.g. q_year=2026, quarter=4)."""
+    point = at.selectbox(key="guar_point_EUSTR")
+    point.select(next(o for o in point.options if o.startswith(BALASSAGYARMAT_EXIT + " ")))
+    at.selectbox(key="guar_instrument").select(instrument).run()
+    for key, value in period.items():
+        widget = at.date_input(key="guar_day") if key == "day" else at.selectbox(key=f"guar_{key}")
+        widget.set_value(value)
+    at.selectbox(key="guar_capacity_unit").select(unit)
+    at.text_input(key="guar_capacity").set_value(capacity)
+    at.radio(key="guar_stage").set_value(stage).run()
+    if stage == "Booked capacity":
+        at.text_input(key="guar_ceghix").set_value(ceghix)
+    at.button(key="guar_add").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+
+
+def guarantee_tables(at):
+    """Tab 3's list and total row (the last two tables of the page)."""
+    return frames(at)[-2], frames(at)[-1]
+
+
+def select_rows(at, rows):
+    """Select table rows as a browser user would; the test runner does not keep a dataframe's
+    selection between runs, so it is set again for the run of the following click."""
+    at.session_state["guar_table"] = {"selection": {"rows": rows, "columns": [], "cells": []}}
+    at.run()
+    at.session_state["guar_table"] = {"selection": {"rows": rows, "columns": [], "cells": []}}
+
+
+def test_tab3_offers_eustream_and_shows_the_ceghix_box_only_for_booked_capacity(real_app):
+    at = real_app
+    assert at.selectbox(key="guar_tso").options == ["Eustream"]
+    assert "Balassagyarmat SK>HU (21Z000000000358C)" in at.selectbox(key="guar_point_EUSTR").options
+    assert at.radio(key="guar_stage").options == ["Capacity auction", "Booked capacity"]
+    assert at.radio(key="guar_stage").value == "Booked capacity"
+    assert at.text_input(key="guar_ceghix").value == ""
+    assert any(c.value == "Enter the CEGHIX valid on the day before the booking." for c in at.caption)
+    assert any(i.value == "Add a booking to start the list." for i in at.info)
+
+    at.radio(key="guar_stage").set_value("Capacity auction").run()
+    assert "guar_ceghix" not in {t.key for t in at.text_input}
+    assert not any("CEGHIX" in c.value for c in at.caption)
+
+
+def test_tab3_list_of_the_spec_bookings_and_its_total(real_app):
+    at = real_app
+    add_booking(at, q_year=2026, quarter=4)
+    add_booking(at, instrument="month", capacity="2400000", unit="kWh/d", m_year=2027, month=1)
+    add_booking(at, instrument="day", stage="Capacity auction", day=date(2026, 12, 5))
+    table, total = guarantee_tables(at)
+    assert list(table.columns) == [
+        "TSO", "Network point", "Product", "Capacity", "Stage", "CEGHIX (EUR/MWh)", "Capacity fee", "GfON fee",
+        "Capacity fee guarantee", "GfON fee guarantee", "Total guarantee",
+    ]
+    assert table.values.tolist() == [
+        ["Eustream", BALASSAGYARMAT_EXIT, "Quarter 2026 Q4", "100,000 kWh/h", "Booked capacity", "30",
+         "361,344.00", "58,180.80", "240,896.00", "39,208.80", "280,104.80"],
+        ["Eustream", BALASSAGYARMAT_EXIT, "Month 2027-01", "2,400,000 kWh/d", "Booked capacity", "30",
+         "120,456.00", "19,604.40", "120,456.00", "19,604.40", "140,060.40"],
+        ["Eustream", BALASSAGYARMAT_EXIT, "Day 2026-12-05", "100,000 kWh/h", "Capacity auction", "–",
+         "7,896.00", "–", "7,896.00", "–", "7,896.00"],
+    ]
+    assert total.values.tolist() == [["Total", "489,696.00", "77,785.20", "369,248.00", "58,813.20", "428,061.20"]]
+
+
+def test_tab3_gas_year_row(real_app):
+    at = real_app
+    add_booking(at, instrument="gas_year", capacity="10000", ceghix="40", gas_year=2025)
+    table, _ = guarantee_tables(at)
+    assert table.iloc[0, 2:].tolist() == [
+        "Gas year 2025/26", "10,000 kWh/h", "Booked capacity", "40", "91,250.00", "30,528.60", "16,060.00",
+        "5,185.68", "21,245.68",
+    ]
+
+
+@pytest.mark.parametrize("capacity, ceghix, message", [
+    ("", "30", "Capacity must be a positive number."),
+    ("100000", "", "CEGHIX must be a positive number."),
+    ("100000", "-1", "CEGHIX must be a positive number."),
+])
+def test_tab3_invalid_bookings_are_not_added(real_app, capacity, ceghix, message):
+    at = real_app
+    add_booking(at, capacity=capacity, ceghix=ceghix)
+    assert any(w.value == message for w in at.warning)
+    assert any(i.value == "Add a booking to start the list." for i in at.info)
+
+
+def test_tab3_a_period_without_a_tariff_is_not_added(real_app):
+    at = real_app
+    add_booking(at, q_year=2021, quarter=4)  # the first row starts on 2022-01-01
+    assert any(w.value.startswith("No tariff exists for Eustream") for w in at.warning)
+    assert at.session_state["guar_rows"] == []
+
+
+def test_tab3_remove_selected_rows_and_clear(real_app):
+    at = real_app
+    for capacity in ("1000", "2000", "3000"):
+        add_booking(at, stage="Capacity auction", capacity=capacity, q_year=2026, quarter=4)
+    assert at.button(key="guar_remove").disabled  # nothing selected yet
+    select_rows(at, [1])
+    at.button(key="guar_remove").click().run()
+    table, _ = guarantee_tables(at)
+    assert table["Capacity"].tolist() == ["1,000 kWh/h", "3,000 kWh/h"]
+
+    at.button(key="guar_clear").click().run()
+    assert at.session_state["guar_rows"] == []
+    assert any(i.value == "Add a booking to start the list." for i in at.info)

@@ -12,7 +12,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from core import fee, map_points, money, periods, points
+from core import fee, guarantee, map_points, money, periods, points
 from core.labels import products_text
 from core.points import Bundle
 from core.fee import dates_text
@@ -349,14 +349,11 @@ def show_bundle_total(result: fee.BundleFeeResult) -> None:
     st.caption("Sum of both sides' totals" + (f", converted {rates}." if rates else ", both in EUR."))
 
 
-def fee_tab(table, catalog: points.Catalog) -> None:
-    today = date.today()
-    booked = choose_booking(catalog)
-    if not booked:
-        st.info("The tariff file has no points of this booking type.")
-        return
+def choose_product(table, booked, today: date, prefix: str) -> tuple[str, dict]:
+    """The product instrument and its period pickers (tabs 2 and 3, each with its own key prefix);
+    returns the instrument and the selection for `fee.resolve_period`."""
     instrument = st.selectbox("Product instrument", fee.INSTRUMENTS, index=fee.INSTRUMENTS.index(fee.QUARTER),
-                              format_func=fee.INSTRUMENT_LABELS.get, key="fee_instrument")
+                              format_func=fee.INSTRUMENT_LABELS.get, key=f"{prefix}_instrument")
 
     gas_years = fee.gas_year_choices(table, booked, today)
     calendar_years = fee.calendar_year_choices(table, booked, today)
@@ -367,23 +364,40 @@ def fee_tab(table, catalog: points.Catalog) -> None:
         current = periods.gas_year_start_year(today)
         selection["gas_year"] = st.selectbox(
             "Gas year", gas_years, index=gas_years.index(current) if current in gas_years else 0,
-            format_func=periods.gas_year_label, key="fee_gas_year")
+            format_func=periods.gas_year_label, key=f"{prefix}_gas_year")
     elif instrument == fee.QUARTER:
         left, right = st.columns(2)
-        selection["year"] = left.selectbox("Year", calendar_years, index=year_default, key="fee_q_year")
+        selection["year"] = left.selectbox("Year", calendar_years, index=year_default, key=f"{prefix}_q_year")
         selection["quarter"] = right.selectbox("Quarter", [1, 2, 3, 4], index=3,
-                                               format_func=lambda q: f"Q{q} ({QUARTER_MONTHS[q]})", key="fee_quarter")
+                                               format_func=lambda q: f"Q{q} ({QUARTER_MONTHS[q]})",
+                                               key=f"{prefix}_quarter")
     elif instrument == fee.MONTH:
         left, right = st.columns(2)
-        selection["year"] = left.selectbox("Year", calendar_years, index=year_default, key="fee_m_year")
-        selection["month"] = right.selectbox("Month", list(range(1, 13)), format_func=lambda m: f"{m:02d}", key="fee_month")
+        selection["year"] = left.selectbox("Year", calendar_years, index=year_default, key=f"{prefix}_m_year")
+        selection["month"] = right.selectbox("Month", list(range(1, 13)), format_func=lambda m: f"{m:02d}",
+                                             key=f"{prefix}_month")
     else:
         selection["day"] = st.date_input("Day", value=date(2026, 12, 5), min_value=date(2000, 1, 1),
-                                         max_value=date(2100, 12, 31), format="YYYY-MM-DD", key="fee_day")
+                                         max_value=date(2100, 12, 31), format="YYYY-MM-DD", key=f"{prefix}_day")
+    return instrument, selection
 
+
+def choose_capacity(prefix: str) -> tuple[str, str]:
+    """The requested capacity box and its unit dropdown (tabs 2 and 3)."""
     left, right = st.columns([3, 1])
-    capacity = left.text_input("Requested capacity", value="", placeholder="e.g. 50000", key="fee_capacity")
-    capacity_unit = right.selectbox("Unit", fee.CAPACITY_UNITS, key="fee_capacity_unit")
+    capacity = left.text_input("Requested capacity", value="", placeholder="e.g. 50000", key=f"{prefix}_capacity")
+    capacity_unit = right.selectbox("Unit", fee.CAPACITY_UNITS, key=f"{prefix}_capacity_unit")
+    return capacity, capacity_unit
+
+
+def fee_tab(table, catalog: points.Catalog) -> None:
+    today = date.today()
+    booked = choose_booking(catalog)
+    if not booked:
+        st.info("The tariff file has no points of this booking type.")
+        return
+    instrument, selection = choose_product(table, booked, today, "fee")
+    capacity, capacity_unit = choose_capacity("fee")
 
     period = fee.resolve_period(instrument, **selection)
     if isinstance(period, fee.FeeError):
@@ -412,6 +426,124 @@ def fee_tab(table, catalog: points.Catalog) -> None:
     show_side(result, "Monthly invoice")
 
 
+# --- tab 3 -------------------------------------------------------------------------------------
+
+GUARANTEE_ROWS = "guar_rows"  # the list of bookings, kept for the browser session
+DASH = "–"
+GUARANTEE_COLUMNS = ("Capacity fee", "GfON fee", "Capacity fee guarantee", "GfON fee guarantee", "Total guarantee")
+
+
+def product_label(instrument: str, selection: dict) -> str:
+    """The product as the guarantee table shows it, e.g. "Quarter 2026 Q4"."""
+    if instrument == fee.GAS_YEAR:
+        period = periods.gas_year_label(selection["gas_year"])
+    elif instrument == fee.QUARTER:
+        period = f"{selection['year']} Q{selection['quarter']}"
+    elif instrument == fee.MONTH:
+        period = f"{selection['year']}-{selection['month']:02d}"
+    else:
+        period = selection["day"].isoformat()
+    return f"{fee.INSTRUMENT_LABELS[instrument]} {period}"
+
+
+def number_text(value: Fraction) -> str:
+    """An exact number with thousands commas: 100,000 or 1,234.5."""
+    whole, _, decimals = money.format_exact(value).partition(".")
+    return f"{int(whole):,}" + (f".{decimals}" if decimals else "")
+
+
+def booking_guarantee(table, booking: dict):
+    period = fee.resolve_period(booking["instrument"], **booking["selection"])
+    if isinstance(period, fee.FeeError):
+        return period
+    return guarantee.calculate_guarantee(table, booking["point"], booking["instrument"], *period, booking["capacity"],
+                                         booking["unit"], booking["stage"], booking["ceghix"])
+
+
+def guarantee_record(booking: dict, result) -> dict:
+    """One table row: the booking's inputs, then its amounts in EUR (blank when it cannot be priced)."""
+    point = booking["point"]
+    booked = booking["stage"] == guarantee.BOOKED
+    record = {
+        "TSO": point.tso_name,
+        "Network point": f"{point.name} {point.flow}",
+        "Product": product_label(booking["instrument"], booking["selection"]),
+        "Capacity": f"{number_text(money.parse_number(booking['capacity']))} {booking['unit']}",
+        "Stage": booking["stage"],
+        "CEGHIX (EUR/MWh)": number_text(guarantee.parse_ceghix(booking["ceghix"])) if booked else DASH,
+    }
+    if isinstance(result, fee.FeeError):
+        return record | dict.fromkeys(GUARANTEE_COLUMNS, "")
+    amounts = (result.capacity_fee, result.gfon_fee, result.capacity_fee_guarantee, result.gfon_fee_guarantee,
+               result.total_guarantee)
+    return record | {column: DASH if amount is None else money.format_amount(amount, money.EUR)
+                     for column, amount in zip(GUARANTEE_COLUMNS, amounts)}
+
+
+def guarantee_total(results) -> dict:
+    """The total row: the sum of each amount column over the priced rows, a dash counting as zero."""
+    priced = [r for r in results if not isinstance(r, fee.FeeError)]
+    sums = (
+        sum(r.capacity_fee for r in priced),
+        sum(r.gfon_fee or 0 for r in priced),
+        sum(r.capacity_fee_guarantee for r in priced),
+        sum(r.gfon_fee_guarantee or 0 for r in priced),
+        sum(r.total_guarantee for r in priced),
+    )
+    return {"": "Total"} | {column: money.format_amount(amount, money.EUR) for column, amount in zip(GUARANTEE_COLUMNS, sums)}
+
+
+def guarantee_tab(table, catalog: points.Catalog) -> None:
+    today = date.today()
+    tso = st.selectbox("TSO", list(guarantee.GUARANTEE_RULES), format_func=points.tso_name, key="guar_tso")
+    tso_points = catalog.singles_of(tso)
+    if not tso_points:
+        st.info("The tariff file has no points of this TSO.")
+        return
+    point = st.selectbox("Network point", tso_points, format_func=lambda p: p.fee_label(catalog.capacity_type(p)),
+                         key=f"guar_point_{tso}")
+    instrument, selection = choose_product(table, point, today, "guar")
+    capacity, capacity_unit = choose_capacity("guar")
+    stage = st.radio("Stage", guarantee.STAGES, index=guarantee.STAGES.index(guarantee.BOOKED), horizontal=True,
+                     key="guar_stage")
+    ceghix = None
+    if stage == guarantee.BOOKED:
+        ceghix = st.text_input("CEGHIX (EUR/MWh)", value="", placeholder="e.g. 30.5", key="guar_ceghix")
+        st.caption(guarantee.CEGHIX_NOTE)
+
+    rows: list[dict] = st.session_state.setdefault(GUARANTEE_ROWS, [])
+    if st.button("Add to list", key="guar_add"):
+        booking = {"point": point, "instrument": instrument, "selection": selection, "capacity": capacity,
+                   "unit": capacity_unit, "stage": stage, "ceghix": ceghix}
+        result = booking_guarantee(table, booking)
+        if isinstance(result, fee.FeeError):
+            st.warning(result.message)
+        else:
+            rows.append(booking)
+
+    if not rows:
+        st.info("Add a booking to start the list.")
+        return
+    results = [booking_guarantee(table, booking) for booking in rows]
+    for booking, result in zip(rows, results):
+        if isinstance(result, fee.FeeError):  # a row the current tariff file no longer prices
+            st.warning(f"{booking['point'].name} {booking['point'].flow}, "
+                       f"{product_label(booking['instrument'], booking['selection'])}: {result.message}")
+    event = st.dataframe(pd.DataFrame([guarantee_record(b, r) for b, r in zip(rows, results)]), hide_index=True,
+                         on_select="rerun", selection_mode="multi-row", key="guar_table")
+    st.dataframe(pd.DataFrame([guarantee_total(results)]), hide_index=True)
+    st.caption("Amounts in EUR.")
+
+    left, right = st.columns(2)
+    if left.button("Remove selected rows", key="guar_remove", disabled=not event.selection.rows):
+        selected = set(event.selection.rows)
+        st.session_state[GUARANTEE_ROWS] = [b for i, b in enumerate(rows) if i not in selected]
+        st.rerun()
+    if right.button("Clear list", key="guar_clear"):
+        st.session_state[GUARANTEE_ROWS] = []
+        st.rerun()
+
+
 # --- page ----------------------------------------------------------------------------------------
 
 st.title("Route Tariff and Capacity Fee Calculator")
@@ -433,8 +565,11 @@ if catalog.unnamed:
     with st.sidebar.expander(f"{len(catalog.unnamed)} point(s) left out: no border flow in the name"):
         for name in catalog.unnamed:
             st.write(name)
-route, capacity_fee = st.tabs(["Route Tariff Calculator", "Capacity Fee Calculator"])
+route, capacity_fee, bank_guarantee = st.tabs(
+    ["Route Tariff Calculator", "Capacity Fee Calculator", "Bank Guarantee Calculator"])
 with route:
     route_tab(load_result.table, points.build_network(catalog))
 with capacity_fee:
     fee_tab(load_result.table, catalog)
+with bank_guarantee:
+    guarantee_tab(load_result.table, catalog)
