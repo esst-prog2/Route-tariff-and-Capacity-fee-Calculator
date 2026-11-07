@@ -74,14 +74,17 @@ Tab 3 works out the financial guarantee (in practice a bank guarantee) a TSO ask
 **Inputs.** For each booking you choose:
 - a TSO (only Eustream for now) and one of its network points;
 - a product and period, and a capacity in kWh/h or kWh/d, as on tab 2;
-- a stage: **Capacity auction** or **Booked capacity**.
+- a stage: **Capacity auction** or **Booked capacity**;
+- an optional **auction surcharge** in % (the premium paid when demand is high; blank means none).
 
 At an auction the guarantee covers only the capacity fee. Once the capacity is booked, it also covers the GfON (Eustream's neutrality fee). A booked capacity needs the CEGHIX in EUR/MWh: the value valid on the day before the booking. You type it in, because the app has no index feed.
+
+The closed section "How Eustream calculates the financial guarantee", under the TSO box, sums up Eustream's rule from its Operational Order (valid from 24 July 2025, sections 3.3.1, 4.2.12 and 7.6): how much for each product, when the guarantee is due, that a bank guarantee must run until at least two months after the contract ends and be topped up within 3 calendar days after a draw, and the accepted forms (bank guarantee, pre-payment, cash collateral).
 
 **The list.** "Add to list" adds the booking as a row. Rows can be selected and removed, or the list cleared, and the list lasts for the browser session. For each row the table shows the capacity fee, GfON fee, capacity fee guarantee, GfON fee guarantee and total guarantee in EUR, with a total row underneath.
 
 **The Eustream rule:**
-- The capacity fee is tab 2's figure.
+- The capacity fee is tab 2's figure plus the surcharge: capacity × tariff + capacity × tariff × surcharge. It is rounded to cents once and invoiced in the same proportions as on tab 2.
 - GfON = the volume at full use of the capacity (24 hours a gas day) in MWh × (CEGHIX + 1) × 0.85 / 100 EUR/MWh.
 - For a gas year or a quarter, each guarantee is the two most expensive months. For a month or a day, it is the whole fee.
 
@@ -90,6 +93,7 @@ For example, Balassagyarmat SK>HU, 2026 Q4, 100,000 kWh/h:
 - The capacity fee guarantee is 240,896.00 EUR.
 - At CEGHIX 30 the GfON rate is 0.2635 EUR/MWh, and the volume is 220,800 MWh. The GfON fee is 58,180.80 EUR and its guarantee (October and December, 148,800 MWh) is 39,208.80 EUR.
 - The guarantee is 280,104.80 EUR for booked capacity, or 240,896.00 EUR at the auction.
+- With a 10% auction surcharge the capacity fee is 397,478.40 EUR (3 × 132,492.80) and its guarantee 264,985.60 EUR; the GfON does not change, so the booked guarantee is 304,194.40 EUR.
 
 Not covered yet:
 - other TSOs;
