@@ -187,3 +187,5 @@ One line per decision: date — what was decided — who decided it (user or Cla
 - 2026-11-05: The `bank-guarantee-eustream` branch is merged into `main` and the `eustream-bank-guarantee` change is archived. Decided by: user.
 - 2026-11-05: The `eustream-bank-guarantee` change is archived to `openspec/changes/archive/2026-11-05-eustream-bank-guarantee/` and its spec synced to `openspec/specs/bank-guarantee-calculator/spec.md` unchanged. Decided by: user (sync).
 - 2026-11-05: `main` is pushed to `origin` and the merged local branch `bank-guarantee-eustream` is deleted (it was never pushed). Decided by: user.
+- 2026-11-07: The Eustream GfON fee is the daily fee (capacity in kWh/h x 24 / 1000 x (CEGHIX + 1) x 0.85 / 100) x the product's days (a month's 28-31 days, a quarter's 90-92), and for a quarter or gas year the GfON guarantee is the daily fee x the days of the product's two longest months (62, or 61 in Apr-Jun); this matches the existing rule, so no code change. Decided by: user.
+- 2026-11-07: The daily GfON fee is kept exact; only the GfON fee and the GfON guarantee are rounded to cents (unchanged). Decided by: user (on Claude's question).
