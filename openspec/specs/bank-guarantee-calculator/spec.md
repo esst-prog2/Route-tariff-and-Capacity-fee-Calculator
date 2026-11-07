@@ -12,7 +12,8 @@ The app SHALL have a third tab, "Bank Guarantee Calculator", after the Route Tar
 - a network point from a dropdown of that TSO's single sides, labelled as on tab 2;
 - a product instrument (gas year, quarter, month or day) and its period, with the same pickers, choices and defaults as tab 2;
 - a requested capacity with its unit (kWh/h, the default, or kWh/d), as on tab 2;
-- a stage: "Capacity auction" or "Booked capacity" (the default).
+- a stage: "Capacity auction" or "Booked capacity" (the default);
+- an "Auction surcharge (%)" box, at either stage, that starts blank and carries the note "The auction surcharge (premium) in %, added to the tariff; leave it blank for none." A blank box means 0%; a decimal comma is accepted.
 
 For "Booked capacity" the tab SHALL also take the CEGHIX in EUR/MWh, in a box that starts blank and carries the note "Enter the CEGHIX valid on the day before the booking." For "Capacity auction" the CEGHIX box SHALL NOT be shown.
 
@@ -22,14 +23,19 @@ For "Booked capacity" the tab SHALL also take the CEGHIX in EUR/MWh, in a box th
 - **WHEN** the stage is switched to "Capacity auction"
 - **THEN** the CEGHIX box is not shown
 
+#### Scenario: Surcharge box at both stages
+- **WHEN** the tab opens, and again after the stage is switched to "Capacity auction"
+- **THEN** the "Auction surcharge (%)" box is shown, blank
+
 #### Scenario: Only Eustream is offered
 - **WHEN** the user opens the TSO dropdown
 - **THEN** the only choice is Eustream, and the network point dropdown lists Eustream's single sides (for example "Balassagyarmat SK>HU (21Z000000000358C)")
 
 ### Requirement: List of bookings
-An "Add to list" button SHALL add the booking to a list shown as a table. Each row SHALL keep the stage and CEGHIX it was added with. A booking SHALL NOT be added, and a message SHALL be shown instead, in these cases:
+An "Add to list" button SHALL add the booking to a list shown as a table. Each row SHALL keep the stage, surcharge and CEGHIX it was added with. A booking SHALL NOT be added, and a message SHALL be shown instead, in these cases:
 - the capacity is invalid: tab 2's message "Capacity must be a positive number.";
 - the period has no tariff: tab 2's no-tariff message;
+- the surcharge is negative or not a number: "The surcharge must be a percentage of 0 or more.";
 - for "Booked capacity", the CEGHIX is blank, zero, negative or not a number: "CEGHIX must be a positive number."
 
 Adding the same booking more than once SHALL be allowed. Rows SHALL be selectable and removed with "Remove selected rows". "Clear list" SHALL empty the list. An empty list SHALL show "Add a booking to start the list." The list SHALL last for the browser session.
@@ -42,6 +48,10 @@ Adding the same booking more than once SHALL be allowed. Rows SHALL be selectabl
 - **WHEN** the stage is "Booked capacity", the CEGHIX box is blank and the user presses "Add to list"
 - **THEN** the tab shows "CEGHIX must be a positive number." and the list is unchanged
 
+#### Scenario: Negative surcharge
+- **WHEN** the surcharge box holds "-5" and the user presses "Add to list"
+- **THEN** the tab shows "The surcharge must be a percentage of 0 or more." and the list is unchanged
+
 #### Scenario: Removing a row
 - **WHEN** the list has three rows and the user selects the second and presses "Remove selected rows"
 - **THEN** the list keeps the first and third rows in their order
@@ -53,6 +63,7 @@ Each row SHALL show these columns, in this order:
 - Product: the instrument and period, e.g. "Quarter 2026 Q4", "Gas year 2025/26", "Month 2027-01", "Day 2026-12-05";
 - Capacity, as typed with its unit, with thousands separators, e.g. "100,000 kWh/h";
 - Stage;
+- Surcharge (%), as typed, e.g. "10" or "2.5", or "–" when there is none (blank or 0);
 - CEGHIX (EUR/MWh);
 - Capacity fee;
 - GfON fee;
@@ -67,11 +78,11 @@ All amounts SHALL be in EUR with two decimals and thousands separators. For a "C
 - **THEN** the total row's total guarantee is 428,061.20 EUR
 
 ### Requirement: Eustream capacity fee guarantee
-For Eustream, a row's capacity fee SHALL be the total that tab 2 shows for the same point, instrument, period, capacity and unit, including tab 2's monthly invoice (a gas year in twelfths, a quarter in thirds, each month at the tariff valid in it). The capacity fee guarantee follows Operational Order 7.6.2:
+For Eustream, a row's capacity fee SHALL be the total that tab 2 shows for the same point, instrument, period, capacity and unit, including tab 2's monthly invoice (a gas year in twelfths, a quarter in thirds, each month at the tariff valid in it), raised by the row's auction surcharge: capacity × tariff + capacity × tariff × surcharge / 100. The surcharged fee SHALL be computed exactly and rounded to cents once, and its monthly invoice SHALL be split in the same proportions as tab 2's invoice, so that it adds up to the fee (Eustream's equal thirds or twelfths stay equal). With no surcharge the fee and invoice are tab 2's. The capacity fee guarantee follows Operational Order 7.6.2:
 - for a gas year or a quarter (contracts longer than two months), it SHALL be the sum of the two largest monthly invoice amounts;
 - for a month or a day, it SHALL be the whole capacity fee.
 
-This applies in both stages.
+This applies in both stages, and the guarantee is taken from the surcharged fee. The surcharge SHALL NOT change the GfON.
 
 #### Scenario: Quarter
 - **WHEN** the booking is Balassagyarmat SK>HU, Quarter 2026 Q4, 100,000 kWh/h (Q4_Oct 3.61344 EUR per kWh/h)
@@ -88,6 +99,14 @@ This applies in both stages.
 #### Scenario: Day at auction
 - **WHEN** the booking is Balassagyarmat SK>HU, Day 2026-12-05, 100,000 kWh/h (D_Dec 0.07896), stage "Capacity auction"
 - **THEN** the capacity fee and capacity fee guarantee are 7,896.00 EUR, CEGHIX, GfON fee and GfON fee guarantee show "–", and the total guarantee is 7,896.00 EUR
+
+#### Scenario: Quarter with a surcharge
+- **WHEN** the booking is Balassagyarmat SK>HU, Quarter 2026 Q4, 100,000 kWh/h, surcharge 10, stage "Booked capacity", CEGHIX 30
+- **THEN** the capacity fee is 397,478.40 EUR (three invoices of 132,492.80), the capacity fee guarantee is 264,985.60 EUR, the GfON fee and GfON fee guarantee are unchanged (58,180.80 and 39,208.80 EUR), and the total guarantee is 304,194.40 EUR
+
+#### Scenario: Day at auction with a surcharge
+- **WHEN** the booking is Balassagyarmat SK>HU, Day 2026-12-05, 100,000 kWh/h, surcharge "2,5", stage "Capacity auction"
+- **THEN** the surcharge column shows "2.5" and the capacity fee, capacity fee guarantee and total guarantee are 8,093.40 EUR
 
 ### Requirement: Eustream GfON fee and guarantee
 For an Eustream "Booked capacity" row, the GfON fee (Eustream's neutrality fee) SHALL be computed as follows:
@@ -116,3 +135,14 @@ The total guarantee SHALL be the capacity fee guarantee plus the GfON fee guaran
 #### Scenario: Month, booked
 - **WHEN** the booking is Balassagyarmat SK>HU, Month 2027-01, 2,400,000 kWh/d, stage "Booked capacity", CEGHIX 30
 - **THEN** the GfON fee and GfON fee guarantee are both 19,604.40 EUR (74,400 MWh), and the total guarantee is 140,060.40 EUR
+
+### Requirement: Description of the TSO's rule
+When a TSO with a description is chosen, the tab SHALL show, under the TSO dropdown, a closed expander "How <TSO> calculates the financial guarantee" with the TSO's rule in words. For Eustream the description SHALL be taken from the English Operational Order valid from 24 July 2025 (sections 3.3.1, 4.2.12 and 7.6), SHALL say that the Slovak version is binding, and SHALL cover:
+- how much: the capacity fee and the GfON separately; two months' payment for a gas year or quarter, the whole payment for a month or day; at a capacity auction only the capacity fee, including the surcharge; the daily GfON formula;
+- when it is due: capacity is allocated only once the guarantee is in place; at points to and from third countries and the domestic point, within 15 calendar days of the request for annual and longer contracts, 7 for short-term ones, and at least 3 business days before transmission starts;
+- how long it is held: an irrevocable bank guarantee expiring no earlier than two months after the end of the contract, kept at the required level for the whole contract and topped up within 3 calendar days after a draw;
+- the accepted forms: bank guarantee, pre-payment or cash collateral, noting that Eustream may set another amount after a credit check (7.6.5) or reassess it (7.6.4), and that the imbalance guarantee (7.6.3) is not covered.
+
+#### Scenario: Eustream description
+- **WHEN** Eustream is the chosen TSO
+- **THEN** the tab shows a closed expander "How Eustream calculates the financial guarantee" that mentions two months' payment, a bank guarantee expiring no earlier than two months after the contract, and the 3 calendar days to top it up

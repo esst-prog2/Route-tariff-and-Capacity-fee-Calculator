@@ -155,3 +155,49 @@ def test_balassagyarmat_month_in_kwh_d_and_day_at_auction(real):
     day = real_guarantee(real, fee.DAY, "100000", "kWh/h", AUCTION, day=date(2026, 12, 5))
     assert (day.capacity_fee, day.capacity_fee_guarantee, day.total_guarantee) == (789600, 789600, 789600)
     assert month.total_guarantee + day.total_guarantee + 28010480 == 42806120  # the spec's list total
+
+
+# --- Auction surcharge -----------------------------------------------------------------------
+
+def guarantee_with_surcharge(table, instrument, capacity, unit, stage, ceghix, surcharge, **selection):
+    start, end = fee.resolve_period(instrument, **selection)
+    return calculate_guarantee(table, POINT, instrument, start, end, capacity, unit, stage, ceghix, surcharge)
+
+
+@pytest.mark.parametrize("text", [None, "", "  ", "0"])
+def test_blank_or_zero_surcharge_changes_nothing(text):
+    plain = guarantee_for(TABLE, fee.QUARTER, "10", "kWh/h", BOOKED, "99", year=2026, quarter=4)
+    result = guarantee_with_surcharge(TABLE, fee.QUARTER, "10", "kWh/h", BOOKED, "99", text, year=2026, quarter=4)
+    assert result.surcharge == 0
+    assert (result.capacity_fee, result.capacity_fee_guarantee, result.gfon_fee, result.gfon_fee_guarantee) == \
+        (plain.capacity_fee, plain.capacity_fee_guarantee, plain.gfon_fee, plain.gfon_fee_guarantee)
+
+
+def test_quarter_surcharge_raises_the_capacity_fee_and_its_guarantee_not_the_gfon():
+    # 10 kWh/h x 300 = 3,000.00 + 15% = 3,450.00, invoiced 1,150.00 a month; two months 2,300.00.
+    result = guarantee_with_surcharge(TABLE, fee.QUARTER, "10", "kWh/h", BOOKED, "99", "15", year=2026, quarter=4)
+    assert result.surcharge == 15
+    assert (result.capacity_fee, result.capacity_fee_guarantee) == (345000, 230000)
+    assert [line.amount for line in result.fee.invoice] == [115000] * 3
+    assert (result.gfon_fee, result.gfon_fee_guarantee) == (1877, 1265)
+    assert result.total_guarantee == 231265
+
+
+def test_surcharge_at_auction_and_for_a_month():
+    # 10 kWh/h x 100 = 1,000.00 + 12.5% = 1,125.00; a month guarantees the whole fee.
+    result = guarantee_with_surcharge(TABLE, fee.MONTH, "10", "kWh/h", AUCTION, None, "12,5", year=2026, month=2)
+    assert (result.capacity_fee, result.capacity_fee_guarantee, result.total_guarantee) == (112500, 112500, 112500)
+
+
+def test_surcharge_invoice_adds_up_after_rounding():
+    # 1 kWh/h x 300 = 300.00 + 0.01% = 300.03, split 100.01 + 100.01 + 100.01.
+    result = guarantee_with_surcharge(TABLE, fee.QUARTER, "1", "kWh/h", AUCTION, None, "0.01", year=2026, quarter=4)
+    assert result.capacity_fee == 30003
+    assert sum(line.amount for line in result.fee.invoice) == 30003
+    assert result.capacity_fee_guarantee == 20002
+
+
+@pytest.mark.parametrize("text", ["-1", "abc"])
+def test_surcharge_must_be_zero_or_more(text):
+    result = guarantee_with_surcharge(TABLE, fee.MONTH, "10", "kWh/h", BOOKED, "30", text, year=2026, month=2)
+    assert result == fee.FeeError(guarantee.SURCHARGE_MESSAGE)

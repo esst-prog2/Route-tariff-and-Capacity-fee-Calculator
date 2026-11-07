@@ -457,7 +457,13 @@ def booking_guarantee(table, booking: dict):
     if isinstance(period, fee.FeeError):
         return period
     return guarantee.calculate_guarantee(table, booking["point"], booking["instrument"], *period, booking["capacity"],
-                                         booking["unit"], booking["stage"], booking["ceghix"])
+                                         booking["unit"], booking["stage"], booking["ceghix"],
+                                         booking.get("surcharge"))
+
+
+def surcharge_text(text) -> str:
+    surcharge = guarantee.parse_surcharge(text)
+    return DASH if isinstance(surcharge, fee.FeeError) or surcharge == 0 else number_text(surcharge)
 
 
 def guarantee_record(booking: dict, result) -> dict:
@@ -470,6 +476,7 @@ def guarantee_record(booking: dict, result) -> dict:
         "Product": product_label(booking["instrument"], booking["selection"]),
         "Capacity": f"{number_text(money.parse_number(booking['capacity']))} {booking['unit']}",
         "Stage": booking["stage"],
+        "Surcharge (%)": surcharge_text(booking.get("surcharge")),
         "CEGHIX (EUR/MWh)": number_text(guarantee.parse_ceghix(booking["ceghix"])) if booked else DASH,
     }
     if isinstance(result, fee.FeeError):
@@ -496,6 +503,9 @@ def guarantee_total(results) -> dict:
 def guarantee_tab(table, catalog: points.Catalog) -> None:
     today = date.today()
     tso = st.selectbox("TSO", list(guarantee.GUARANTEE_RULES), format_func=points.tso_name, key="guar_tso")
+    if tso in guarantee.GUARANTEE_NOTES:
+        with st.expander(f"How {points.tso_name(tso)} calculates the financial guarantee"):
+            st.markdown(guarantee.GUARANTEE_NOTES[tso])
     tso_points = catalog.singles_of(tso)
     if not tso_points:
         st.info("The tariff file has no points of this TSO.")
@@ -506,6 +516,8 @@ def guarantee_tab(table, catalog: points.Catalog) -> None:
     capacity, capacity_unit = choose_capacity("guar")
     stage = st.radio("Stage", guarantee.STAGES, index=guarantee.STAGES.index(guarantee.BOOKED), horizontal=True,
                      key="guar_stage")
+    surcharge = st.text_input("Auction surcharge (%)", value="", placeholder="e.g. 15", key="guar_surcharge")
+    st.caption(guarantee.SURCHARGE_NOTE)
     ceghix = None
     if stage == guarantee.BOOKED:
         ceghix = st.text_input("CEGHIX (EUR/MWh)", value="", placeholder="e.g. 30.5", key="guar_ceghix")
@@ -514,7 +526,7 @@ def guarantee_tab(table, catalog: points.Catalog) -> None:
     rows: list[dict] = st.session_state.setdefault(GUARANTEE_ROWS, [])
     if st.button("Add to list", key="guar_add"):
         booking = {"point": point, "instrument": instrument, "selection": selection, "capacity": capacity,
-                   "unit": capacity_unit, "stage": stage, "ceghix": ceghix}
+                   "unit": capacity_unit, "stage": stage, "ceghix": ceghix, "surcharge": surcharge}
         result = booking_guarantee(table, booking)
         if isinstance(result, fee.FeeError):
             st.warning(result.message)

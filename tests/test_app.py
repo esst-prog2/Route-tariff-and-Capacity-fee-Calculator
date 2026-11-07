@@ -178,7 +178,7 @@ def test_tab1_daily_only_has_no_saving_line():
 
 def test_tab1_details_list_tariff_used_per_point_and_product():
     at = start_app()
-    assert [e.label for e in at.expander] == ["Details"]
+    assert [e.label for e in at.expander if not e.label.startswith("How ")] == ["Details"]  # tab 3 has its own
     assert not at.expander[0].proto.expanded  # closed until opened
     details = frames(at)[-1]
     assert list(details.columns) == ["TSO", "Point", "Direction", "Dates", "Product", "Tariff used", "Tariff"]
@@ -568,7 +568,7 @@ BALASSAGYARMAT_EXIT = "Balassagyarmat SK>HU"
 
 
 def add_booking(at, instrument="quarter", stage="Booked capacity", capacity="100000", unit="kWh/h", ceghix="30",
-                **period):
+                surcharge="", **period):
     """Fill in tab 3 for Balassagyarmat SK>HU and press Add to list. `period` sets the picker
     keys without their `guar_` prefix (e.g. q_year=2026, quarter=4)."""
     point = at.selectbox(key="guar_point_EUSTR")
@@ -579,6 +579,7 @@ def add_booking(at, instrument="quarter", stage="Booked capacity", capacity="100
         widget.set_value(value)
     at.selectbox(key="guar_capacity_unit").select(unit)
     at.text_input(key="guar_capacity").set_value(capacity)
+    at.text_input(key="guar_surcharge").set_value(surcharge)
     at.radio(key="guar_stage").set_value(stage).run()
     if stage == "Booked capacity":
         at.text_input(key="guar_ceghix").set_value(ceghix)
@@ -614,6 +615,15 @@ def test_tab3_offers_eustream_and_shows_the_ceghix_box_only_for_booked_capacity(
     assert not any("CEGHIX" in c.value for c in at.caption)
 
 
+def test_tab3_explains_the_eustream_rule(real_app):
+    at = real_app
+    expander = next(e for e in at.expander if e.label == "How Eustream calculates the financial guarantee")
+    text = " ".join(m.value for m in expander.markdown)
+    for phrase in ("two months' payment", "no earlier than two months", "3 calendar days", "bank guarantee",
+                   "(CEGHIX + 1) × 0.85 / 100"):
+        assert phrase in text
+
+
 def test_tab3_list_of_the_spec_bookings_and_its_total(real_app):
     at = real_app
     add_booking(at, q_year=2026, quarter=4)
@@ -621,18 +631,40 @@ def test_tab3_list_of_the_spec_bookings_and_its_total(real_app):
     add_booking(at, instrument="day", stage="Capacity auction", day=date(2026, 12, 5))
     table, total = guarantee_tables(at)
     assert list(table.columns) == [
-        "TSO", "Network point", "Product", "Capacity", "Stage", "CEGHIX (EUR/MWh)", "Capacity fee", "GfON fee",
+        "TSO", "Network point", "Product", "Capacity", "Stage", "Surcharge (%)", "CEGHIX (EUR/MWh)",
+        "Capacity fee", "GfON fee",
         "Capacity fee guarantee", "GfON fee guarantee", "Total guarantee",
     ]
     assert table.values.tolist() == [
-        ["Eustream", BALASSAGYARMAT_EXIT, "Quarter 2026 Q4", "100,000 kWh/h", "Booked capacity", "30",
+        ["Eustream", BALASSAGYARMAT_EXIT, "Quarter 2026 Q4", "100,000 kWh/h", "Booked capacity", "–", "30",
          "361,344.00", "58,180.80", "240,896.00", "39,208.80", "280,104.80"],
-        ["Eustream", BALASSAGYARMAT_EXIT, "Month 2027-01", "2,400,000 kWh/d", "Booked capacity", "30",
+        ["Eustream", BALASSAGYARMAT_EXIT, "Month 2027-01", "2,400,000 kWh/d", "Booked capacity", "–", "30",
          "120,456.00", "19,604.40", "120,456.00", "19,604.40", "140,060.40"],
-        ["Eustream", BALASSAGYARMAT_EXIT, "Day 2026-12-05", "100,000 kWh/h", "Capacity auction", "–",
+        ["Eustream", BALASSAGYARMAT_EXIT, "Day 2026-12-05", "100,000 kWh/h", "Capacity auction", "–", "–",
          "7,896.00", "–", "7,896.00", "–", "7,896.00"],
     ]
     assert total.values.tolist() == [["Total", "489,696.00", "77,785.20", "369,248.00", "58,813.20", "428,061.20"]]
+
+
+def test_tab3_surcharge_raises_the_capacity_fee_and_its_guarantee(real_app):
+    # 361,344.00 + 10% = 397,478.40, invoiced 132,492.80 a month; the GfON stays as without a surcharge.
+    at = real_app
+    assert at.text_input(key="guar_surcharge").value == ""
+    add_booking(at, q_year=2026, quarter=4, surcharge="10")
+    add_booking(at, instrument="day", stage="Capacity auction", day=date(2026, 12, 5), surcharge="2,5")
+    table, total = guarantee_tables(at)
+    assert table.iloc[:, 4:].values.tolist() == [
+        ["Booked capacity", "10", "30", "397,478.40", "58,180.80", "264,985.60", "39,208.80", "304,194.40"],
+        ["Capacity auction", "2.5", "–", "8,093.40", "–", "8,093.40", "–", "8,093.40"],
+    ]
+    assert total.values.tolist() == [["Total", "405,571.80", "58,180.80", "273,079.00", "39,208.80", "312,287.80"]]
+
+
+def test_tab3_refuses_a_negative_surcharge(real_app):
+    at = real_app
+    add_booking(at, q_year=2026, quarter=4, surcharge="-5")
+    assert any(w.value == "The surcharge must be a percentage of 0 or more." for w in at.warning)
+    assert any(i.value == "Add a booking to start the list." for i in at.info)
 
 
 def test_tab3_gas_year_row(real_app):
@@ -640,7 +672,7 @@ def test_tab3_gas_year_row(real_app):
     add_booking(at, instrument="gas_year", capacity="10000", ceghix="40", gas_year=2025)
     table, _ = guarantee_tables(at)
     assert table.iloc[0, 2:].tolist() == [
-        "Gas year 2025/26", "10,000 kWh/h", "Booked capacity", "40", "91,250.00", "30,528.60", "16,060.00",
+        "Gas year 2025/26", "10,000 kWh/h", "Booked capacity", "–", "40", "91,250.00", "30,528.60", "16,060.00",
         "5,185.68", "21,245.68",
     ]
 
