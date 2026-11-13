@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Route Tariff and Capacity Fee Calculator</title>
-<meta name="description" content="Click the border points on a map, see what a gas route across Central and Eastern Europe costs, and book capacity without asking anyone. A free calculator on the real tariffs of 21 pipeline operators.">
+<meta name="description" content="Click the border points on a map, see what a gas route across Central and Eastern Europe costs, and know what to book without asking anyone. A free calculator on the real tariffs of 21 pipeline operators.">
 <link rel="preload" href="fonts/archivo-latin-wdth.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M5 26 L27 6' stroke='%23C8102E' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='5' cy='26' r='4.5' fill='%2315181A'/%3E%3Ccircle cx='27' cy='6' r='4.5' fill='%2315181A'/%3E%3C/svg%3E">
@@ -29,7 +29,7 @@
         <li class="bp"><i></i><span>Kiskun&shy;dorozsma 2</span></li>
         <li class="hub"><b>HU</b></li>
       </ol>
-      <h1>Click the border points on a map, see what the whole route costs, and book capacity without asking anyone.</h1>
+      <h1>Click the border points on a map, see what the whole route costs, and know what to book without asking anyone.</h1>
       <p class="who">For gas traders who move gas across the borders of Central and Eastern Europe.</p>
       <a class="btn" href="https://route-tariff-and-capacity-fee-calculator.streamlit.app">Open the calculator<svg class="arrow" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h13M11 5l5 5-5 5"/></svg></a>
       <p class="when">Booked 1 October 2026 to 31 March 2027, at 400 HUF per EUR. <span class="dot" aria-hidden="true"></span>One of the 22 border points the calculator prices.</p>
@@ -65,10 +65,11 @@
     <article class="inset">
       <div class="inset-text">
         <h3>What does this route cost?</h3>
-        <p>BG &gt; Kireevo/Zaychar &gt; RS &gt; Kiskundorozsma 2 &gt; HU, booked 1 October 2026 to 31 March 2027, at 400 HUF per EUR: <strong class="fig">3.6957 EUR/MWh</strong>. Booking quarters instead of months saves <strong class="fig">0.2956 EUR/MWh</strong>.</p>
+        <p class="plain">Moving gas from Bulgaria through Serbia to Hungary for six months costs about 3.70 euros for every megawatt-hour of gas, with the cheapest mix of products chosen at each border.</p>
+        <p class="spec">BG &gt; Kireevo/Zaychar &gt; RS &gt; Kiskundorozsma 2 &gt; HU, booked 1 October 2026 to 31 March 2027, at 400 HUF per EUR: <strong class="fig">3.6957 EUR/MWh</strong> (euros per megawatt-hour). Booking quarters instead of months saves <strong class="fig">0.2956 EUR/MWh</strong>.</p>
       </div>
       <figure class="inset-shot">
-        <img src="img/tab1.webp" width="1088" height="478" loading="lazy" alt="The Route Tariff Calculator's result: four network points on the route BG to HU, each with its operator, products Q4 2026 and Q1 2027 and its EUR/MWh, and a route total of 3.6957 EUR/MWh, 3.9913 without quarterly products, a saving of 0.2956.">
+        <a href="img/tab1.webp" class="shot-link"><img src="img/tab1.webp" width="1088" height="478" loading="lazy" alt="The Route Tariff Calculator's result: four network points on the route BG to HU, each with its operator, products Q4 2026 and Q1 2027 and its EUR/MWh, and a route total of 3.6957 EUR/MWh, 3.9913 without quarterly products, a saving of 0.2956."></a>
         <figcaption>The Route Tariff Calculator tab, in a real run of the app.</figcaption>
       </figure>
     </article>
@@ -76,10 +77,11 @@
     <article class="inset">
       <div class="inset-text">
         <h3>What will the invoices be?</h3>
-        <p>50,000 kWh/d at Mosonmagyaróvár AT&gt;HU for Q4 2026: <strong class="fig">2,605.83 EUR</strong> to Gas Connect Austria and <strong class="fig">782,558 HUF</strong> to FGSZ, each split into the three monthly invoices they will send.</p>
+        <p class="plain">Booking pipeline capacity at the Austria–Hungary border for October to December means two bills, one from each country’s operator in its own currency; the app shows both and every monthly invoice.</p>
+        <p class="spec">50,000 kWh/d at Mosonmagyaróvár AT&gt;HU for Q4 2026: <strong class="fig">2,605.83 EUR</strong> to Gas Connect Austria and <strong class="fig">782,558 HUF</strong> to FGSZ, each split into the three monthly invoices they will send.</p>
       </div>
       <figure class="inset-shot">
-        <img src="img/tab2.webp" width="1088" height="806" loading="lazy" alt="The Capacity Fee Calculator for the bundled point Mosonmagyaróvár AT>HU in Q4 2026: the Gas Connect Austria exit costs 2,605.83 EUR, invoiced 868.61 EUR a month, and the FGSZ entry 782,558 HUF, invoiced 260,853, 260,853 and 260,852 HUF.">
+        <a href="img/tab2.webp" class="shot-link"><img src="img/tab2.webp" width="1088" height="806" loading="lazy" alt="The Capacity Fee Calculator for the bundled point Mosonmagyaróvár AT></a>HU in Q4 2026: the Gas Connect Austria exit costs 2,605.83 EUR, invoiced 868.61 EUR a month, and the FGSZ entry 782,558 HUF, invoiced 260,853, 260,853 and 260,852 HUF.">
         <figcaption>The Capacity Fee Calculator tab, in a real run of the app.</figcaption>
       </figure>
     </article>
@@ -87,10 +89,11 @@
     <article class="inset">
       <div class="inset-text">
         <h3>How much guarantee do I need?</h3>
-        <p>100,000 kWh/h at Eustream’s Balassagyarmat SK&gt;HU for Q4 2026, with the gas price index CEGHIX at 30 EUR/MWh, as booked capacity (not at the auction stage): a capacity fee of <strong class="fig">361,344.00 EUR</strong>, and a guarantee of <strong class="fig">280,104.80 EUR</strong>.</p>
+        <p class="plain">Eustream, the Slovak operator, asks for a bank guarantee as security for the fees; for this three-month booking it is 280,104.80 euros, worked out from Eustream’s own rule.</p>
+        <p class="spec">100,000 kWh/h at Eustream’s Balassagyarmat SK&gt;HU for Q4 2026, with the gas price index CEGHIX at 30 EUR/MWh, as booked capacity (not at the auction stage): a capacity fee of <strong class="fig">361,344.00 EUR</strong>, and a guarantee of <strong class="fig">280,104.80 EUR</strong>.</p>
       </div>
       <figure class="inset-shot">
-        <img src="img/tab3.webp" width="1088" height="472" loading="lazy" alt="The Bank Guarantee Calculator with the stage Booked capacity and CEGHIX 30: Eustream Balassagyarmat SK>HU, Quarter 2026 Q4, 100,000 kWh/h, capacity fee 361,344.00 EUR, total guarantee 280,104.80 EUR.">
+        <a href="img/tab3.webp" class="shot-link"><img src="img/tab3.webp" width="1088" height="472" loading="lazy" alt="The Bank Guarantee Calculator with the stage Booked capacity and CEGHIX 30: Eustream Balassagyarmat SK></a>HU, Quarter 2026 Q4, 100,000 kWh/h, capacity fee 361,344.00 EUR, total guarantee 280,104.80 EUR.">
         <figcaption>The Bank Guarantee Calculator tab, in a real run of the app.</figcaption>
       </figure>
     </article>

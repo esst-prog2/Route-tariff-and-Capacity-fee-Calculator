@@ -152,12 +152,13 @@ h3 { font-size: 1.35rem; line-height: 1.2; font-weight: 700; font-stretch: var(-
 .after h3 { color: var(--red); }
 
 .insets h2 { margin-bottom: clamp(28px, 3.5vw, 48px); }
-.inset { display: grid; grid-template-columns: minmax(260px, 4fr) 7fr; gap: clamp(24px, 3vw, 48px); align-items: start; padding-block: clamp(28px, 3.5vw, 44px); border-top: var(--stroke) solid var(--rule); }
-.inset:nth-of-type(even) { grid-template-columns: 7fr minmax(260px, 4fr); }
-.inset:nth-of-type(even) .inset-text { order: 2; }
+.inset { display: grid; grid-template-columns: minmax(240px, 4fr) 7fr; gap: clamp(16px, 2vw, 28px) clamp(24px, 3vw, 48px); padding-block: clamp(28px, 3.5vw, 44px); border-top: var(--stroke) solid var(--rule); }
+.inset-text { display: contents; }
 .inset h3 { font-size: clamp(1.5rem, 2.2vw, 2rem); font-stretch: var(--narrow); font-weight: 800; }
-.inset-text p:last-child { margin-top: 0.8rem; max-width: 46ch; }
-.inset-shot { background: var(--panel); border: var(--stroke) solid var(--rule); box-shadow: 0 6px 24px rgb(21 24 26 / 0.1); }
+.inset .plain { font-size: 1.3rem; line-height: 1.4; max-width: 46ch; text-wrap: pretty; }
+.inset .spec { grid-column: 2; font-size: 1rem; color: var(--ink-2); max-width: 62ch; text-wrap: pretty; }
+.inset-shot { grid-column: 1 / -1; justify-self: start; width: 100%; max-width: 1090px; background: var(--panel); border: var(--stroke) solid var(--rule); box-shadow: 0 6px 24px rgb(21 24 26 / 0.1); }
+.shot-link { display: block; cursor: zoom-in; }
 .inset-shot img { display: block; width: 100%; height: auto; }
 .inset-shot figcaption { border-top: 1px solid var(--border); padding: 0.5em 0.8em; font-size: 0.9rem; color: var(--ink-2); }
 
@@ -189,8 +190,8 @@ h3 { font-size: 1.35rem; line-height: 1.2; font-weight: 700; font-stretch: var(-
   .map-svg { position: absolute; inset: auto; width: 263vw; height: 244vw; left: -142vw; top: -113vw; }
   .rp-name, .rp-ops, .lead { display: none; }
   .total { position: static; order: 3; min-width: 0; box-shadow: none; padding-inline: var(--gap); }
-  .before-after, .inset, .inset:nth-of-type(even), .try, .notes { grid-template-columns: 1fr; }
-  .inset:nth-of-type(even) .inset-text { order: 0; }
+  .before-after, .inset, .try, .notes { grid-template-columns: 1fr; }
+  .inset .spec { grid-column: 1; }
   .before { border-right: 0; border-bottom: var(--stroke) solid var(--rule); }
 }
 @media (min-width: 861px) and (max-width: 1180px) {

@@ -177,3 +177,10 @@ No blocking findings remain. The 5 open minor finding(s) below are recorded for 
 
 > Section 6 says 'check the calculations'; 'system usage department' vs 'system usage team' unchanged.
 <!-- gstack:office-hours:concerns:end -->
+
+## Changes after Impeccable critique (2026-11-13)
+- Headline, decided by the user after the critique: "Click the border points on a map, see what the whole route costs, and know what to book without asking anyone." (was "...and book capacity..."; the three verbs for the video are now click / see / know).
+- Each example in section 4 now opens with one plain sentence for readers who don't know gas trading, followed by the original example as a smaller spec line:
+  - Route: "Moving gas from Bulgaria through Serbia to Hungary for six months costs about 3.70 euros for every megawatt-hour of gas, with the cheapest mix of products chosen at each border." (3.6957 EUR/MWh is now glossed as euros per megawatt-hour.)
+  - Invoices: "Booking pipeline capacity at the Austria–Hungary border for October to December means two bills, one from each country's operator in its own currency; the app shows both and every monthly invoice."
+  - Guarantee: "Eustream, the Slovak operator, asks for a bank guarantee as security for the fees; for this three-month booking it is 280,104.80 euros, worked out from Eustream's own rule."
