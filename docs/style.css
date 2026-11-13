@@ -1,0 +1,198 @@
+/* Route Tariff and Capacity Fee Calculator: promo page. World: the transmission network map traders pin on the wall. */
+
+@font-face {
+  font-family: "Archivo";
+  src: url("fonts/archivo-latin-wdth.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Archivo";
+  src: url("fonts/archivo-latin-ext-wdth.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  color-scheme: light;
+  --sea: #D6E1E7;          /* water and everything off the network */
+  --land: #F7F9FA;         /* countries */
+  --land-route: #FFFFFF;   /* the three countries the route crosses */
+  --border: #8D989F;       /* country borders */
+  --ink: #15181A;
+  --ink-2: #3D454B;        /* secondary text on paper */
+  --paper: #EDF1F3;        /* the sheet below the map */
+  --panel: #FFFFFF;
+  --rule: #15181A;
+  --red: #C8102E;          /* the route and the action, nothing else */
+  --red-dark: #9E0B23;
+  --blue: #1F4E9A;         /* border points the calculator prices */
+  --stroke: 1.5px;
+  --gap: clamp(20px, 2.4vw, 40px);
+  --narrow: 78%;
+  --wide: 112%;
+  font-family: "Archivo", "Arial Narrow", sans-serif;
+  font-stretch: 100%;
+  color: var(--ink);
+  background: var(--paper);
+  scrollbar-color: var(--ink-2) var(--paper);
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--paper); font-size: 1.125rem; line-height: 1.5; }
+::selection { background: var(--red); color: #fff; }
+a { color: inherit; text-decoration-thickness: var(--stroke); text-underline-offset: 0.2em; }
+a:hover { color: var(--red); }
+:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
+h1, h2, h3, p, ul, ol, dl, dd, figure { margin: 0; }
+.fig { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ---- Button: the one red object off the map ---- */
+.btn {
+  display: inline-flex; align-items: center; gap: 0.6em;
+  background: var(--red); color: #fff; text-decoration: none;
+  font-weight: 700; font-stretch: var(--wide); font-size: 1.25rem; letter-spacing: 0.01em;
+  padding: 0.85em 1.15em; border-radius: 2px;
+  box-shadow: 0 2px 6px rgb(21 24 26 / 0.18);
+  transition: background-color 160ms ease-out, transform 160ms ease-out;
+}
+.btn:hover { background: var(--red-dark); color: #fff; transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn .arrow { width: 1.1em; height: 1.1em; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transition: transform 160ms ease-out; }
+.btn:hover .arrow { transform: translateX(3px); }
+
+/* ---- Hero: the map, full bleed ---- */
+.hero { position: relative; height: clamp(640px, 100svh, 1080px); overflow: hidden; background: var(--sea); border-bottom: var(--stroke) solid var(--rule); }
+.map, .map-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.map-svg { display: block; font-family: "Archivo", sans-serif; }
+.sea { fill: var(--sea); }
+.c { fill: var(--land); stroke: var(--border); stroke-width: 0.8; stroke-linejoin: round; }
+.route-c { fill: var(--land-route); }
+.cc { font-size: 12px; font-weight: 700; font-stretch: var(--wide); letter-spacing: 0.12em; fill: var(--ink-2); text-anchor: middle; }
+.route-cc { fill: var(--ink); font-size: 14px; }
+
+.pt circle { fill: var(--blue); stroke: var(--land); stroke-width: 1.5; transition: r 160ms ease-out; }
+.pt text { font-size: 11px; font-weight: 600; font-stretch: var(--narrow); fill: var(--ink); paint-order: stroke; stroke: var(--land); stroke-width: 3px; opacity: 0; transition: opacity 160ms ease-out; pointer-events: none; }
+.pt { cursor: default; outline: none; }
+.pt:hover circle, .pt:focus-visible circle { r: 7; }
+.pt:hover text, .pt:focus-visible text { opacity: 1; }
+.pt:focus-visible circle { stroke: var(--red); stroke-width: 2.5; }
+
+.route-line { fill: none; stroke: var(--red); stroke-width: 6; stroke-linecap: round; }
+.rp { outline: none; }
+.rp circle { fill: var(--red); stroke: var(--land-route); stroke-width: 2.5; }
+.rp:focus-visible circle { stroke: var(--ink); }
+.lead { stroke: var(--ink); stroke-width: 1; fill: none; }
+.rp-name { font-size: 13px; font-weight: 700; font-stretch: var(--wide); fill: var(--ink); paint-order: stroke; stroke: var(--land-route); stroke-width: 4px; }
+.rp-ops { font-size: 15px; font-weight: 500; fill: var(--ink); paint-order: stroke; stroke: var(--land-route); stroke-width: 4px; }
+.rp-ops .n { font-weight: 800; fill: var(--red); }
+.rp-ops .v { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* The legend box, top left, like a poster map's legend */
+.legend { position: absolute; z-index: 2; left: var(--gap); top: var(--gap); width: min(540px, 40vw); background: var(--panel); border: var(--stroke) solid var(--rule); box-shadow: 0 6px 24px rgb(21 24 26 / 0.14); }
+.legend-title { background: var(--ink); color: #fff; font-weight: 700; font-stretch: var(--wide); font-size: 0.95rem; letter-spacing: 0.04em; padding: 0.7em 1.4rem; }
+.legend-body { padding: 1.5rem 1.4rem 1.4rem; }
+.legend h1 { font-size: clamp(1.75rem, 2.55vw, 2.6rem); line-height: 1.06; font-weight: 800; font-stretch: var(--narrow); letter-spacing: -0.01em; text-wrap: balance; }
+.who { margin-top: 0.9rem; font-size: 1.15rem; color: var(--ink-2); max-width: 34ch; }
+.legend .btn { margin-top: 1.4rem; }
+.key { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); display: grid; gap: 0.45rem; font-size: 0.95rem; line-height: 1.35; color: var(--ink-2); }
+.key div { display: grid; grid-template-columns: 34px 1fr; gap: 0.6rem; align-items: start; }
+.key dt svg { width: 28px; height: 10px; margin-top: 0.35em; display: block; }
+.key-route { stroke: var(--red); stroke-width: 4; stroke-linecap: round; fill: none; }
+.key-pt { fill: var(--blue); }
+
+/* The route total, top right */
+.total { position: absolute; z-index: 2; right: var(--gap); top: var(--gap); background: var(--ink); color: #fff; padding: 1.1rem 1.4rem 1.2rem; min-width: 300px; box-shadow: 0 6px 24px rgb(21 24 26 / 0.2); }
+.total-label { font-weight: 700; font-stretch: var(--wide); font-size: 0.95rem; letter-spacing: 0.04em; color: #fff; }
+.total-value { margin-top: 0.2rem; line-height: 1; }
+.total-num { font-size: clamp(3.4rem, 5.4vw, 5.6rem); font-weight: 800; font-stretch: var(--narrow); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.total .unit { font-size: 1.15rem; font-weight: 600; }
+.total-sum { margin-top: 0.55rem; font-variant-numeric: tabular-nums; color: #C9D0D4; font-size: 1rem; }
+.total-save { margin-top: 0.15rem; color: #C9D0D4; font-size: 1rem; }
+
+/* On tall screens the total sits bottom left, over the empty sea and Italy; on short ones it stays top right
+   and covers the UA label, which is hidden rather than cut in half. */
+@media (min-width: 861px) and (min-height: 800px) {
+  .total { top: auto; right: auto; bottom: var(--gap); left: var(--gap); }
+}
+@media (min-width: 861px) and (max-height: 799.98px) {
+  .cc-ua { display: none; }
+}
+
+/* The one authored moment: the route draws itself, its points arrive, the total adds up. */
+.anim .route-line { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 1300ms cubic-bezier(0.16, 1, 0.3, 1) 400ms forwards; }
+.anim .rp1 { animation: arrive 500ms ease-out 450ms both; }
+.anim .rp2 { animation: arrive 500ms ease-out 1350ms both; }
+.anim .total { animation: arrive 600ms ease-out 1900ms both; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes arrive { from { opacity: 0; filter: blur(4px); } to { opacity: 1; filter: blur(0); } }
+
+/* ---- The sheet below the map ---- */
+main { max-width: 1240px; margin: 0 auto; padding: 0 var(--gap); }
+section { padding-block: clamp(56px, 8vw, 112px) 0; }
+h2 { font-size: clamp(1.9rem, 3vw, 2.8rem); line-height: 1.1; font-weight: 800; font-stretch: var(--narrow); letter-spacing: -0.01em; text-wrap: balance; }
+h3 { font-size: 1.35rem; line-height: 1.2; font-weight: 700; font-stretch: var(--wide); }
+
+.problem-text { max-width: 30ch; font-size: clamp(1.9rem, 3.4vw, 3.1rem); font-weight: 700; }
+.before-after { margin-top: clamp(32px, 4vw, 56px); display: grid; grid-template-columns: 1fr 1fr; border: var(--stroke) solid var(--rule); background: var(--panel); }
+.ba { padding: 1.6rem 1.6rem 1.8rem; }
+.ba p { margin-top: 0.6rem; max-width: 42ch; }
+.before { border-right: var(--stroke) solid var(--rule); color: var(--ink-2); }
+.before h3 { color: var(--ink-2); }
+.after h3 { color: var(--red); }
+
+.insets h2 { margin-bottom: clamp(28px, 3.5vw, 48px); }
+.inset { display: grid; grid-template-columns: minmax(260px, 4fr) 7fr; gap: clamp(24px, 3vw, 48px); align-items: start; padding-block: clamp(28px, 3.5vw, 44px); border-top: var(--stroke) solid var(--rule); }
+.inset:nth-of-type(even) { grid-template-columns: 7fr minmax(260px, 4fr); }
+.inset:nth-of-type(even) .inset-text { order: 2; }
+.inset h3 { font-size: clamp(1.5rem, 2.2vw, 2rem); font-stretch: var(--narrow); font-weight: 800; }
+.inset-text p:last-child { margin-top: 0.8rem; max-width: 46ch; }
+.inset-shot { background: var(--panel); border: var(--stroke) solid var(--rule); box-shadow: 0 6px 24px rgb(21 24 26 / 0.1); }
+.inset-shot img { display: block; width: 100%; height: auto; }
+.inset-shot figcaption { border-top: 1px solid var(--border); padding: 0.5em 0.8em; font-size: 0.9rem; color: var(--ink-2); }
+
+.try { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(24px, 4vw, 64px); align-items: start; }
+.try-main .btn { margin-top: 1.4rem; font-size: 1.4rem; }
+.try-main p { margin-top: 1.1rem; max-width: 46ch; }
+.try-main .local { color: var(--ink-2); }
+.check { background: var(--panel); border: var(--stroke) solid var(--rule); padding: 1.4rem 1.6rem 1.6rem; }
+.check ol { margin-top: 0.8rem; padding-left: 1.4em; display: grid; gap: 0.35rem; }
+.check li::marker { font-weight: 800; color: var(--red); }
+
+.notes { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(24px, 4vw, 64px); padding-bottom: clamp(56px, 8vw, 112px); }
+.note h2 { font-size: clamp(1.5rem, 2.2vw, 2rem); padding-bottom: 0.6rem; border-bottom: var(--stroke) solid var(--rule); }
+.note ul { margin-top: 1rem; padding-left: 1.1em; display: grid; gap: 0.6rem; }
+.note li { max-width: 52ch; }
+.note li::marker { color: var(--ink-2); }
+
+.imprint { border-top: var(--stroke) solid var(--rule); padding: 1.4rem var(--gap) 2rem; display: flex; flex-wrap: wrap; gap: 0.4rem 2rem; justify-content: space-between; font-size: 0.95rem; color: var(--ink-2); background: var(--paper); }
+
+/* ---- Narrow screens: the map crops to the route, the legend follows it ---- */
+@media (max-width: 860px) {
+  .hero { height: auto; display: flex; flex-direction: column; overflow: visible; }
+  .legend { position: static; order: 1; width: auto; border: 0; border-bottom: var(--stroke) solid var(--rule); box-shadow: none; }
+  .legend-title { padding-inline: var(--gap); }
+  .legend-body { padding-inline: var(--gap); }
+  .legend h1 { font-size: clamp(1.7rem, 7.4vw, 2.4rem); }
+  .map { position: relative; order: 2; height: 89vw; max-height: 560px; overflow: hidden; }
+  /* Show the route region: map units x 540-920, y 430-770 */
+  .map-svg { position: absolute; inset: auto; width: 263vw; height: 244vw; left: -142vw; top: -113vw; }
+  .rp-name, .rp-ops, .lead { display: none; }
+  .total { position: static; order: 3; min-width: 0; box-shadow: none; padding-inline: var(--gap); }
+  .before-after, .inset, .inset:nth-of-type(even), .try, .notes { grid-template-columns: 1fr; }
+  .inset:nth-of-type(even) .inset-text { order: 0; }
+  .before { border-right: 0; border-bottom: var(--stroke) solid var(--rule); }
+}
+@media (min-width: 861px) and (max-width: 1180px) {
+  .legend { width: min(460px, 46vw); }
+  .total { min-width: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
