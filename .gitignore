@@ -27,3 +27,6 @@ __pycache__/
 # Impeccable runtime state (decision-page server logs and seeds); the decision payload and sketches in .impeccable/decision/ are committed.
 .impeccable/questions/
 .impeccable/decision/answer.txt
+.impeccable/live/*
+!.impeccable/live/config.json
+.impeccable/decision/gen*.json
