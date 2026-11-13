@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Capacity Map sketch</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@500;700&family=Archivo:wght@800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;background:#F6F5F0;color:#1A1A1A;font-family:"Archivo Narrow",sans-serif;overflow:hidden;position:relative}
+svg{position:absolute;inset:0}
+.legend{position:absolute;left:48px;top:48px;width:470px;background:#fff;border:2px solid #1A1A1A;padding:30px}
+h1{font:800 46px/1 "Archivo";letter-spacing:-.01em}
+.who{font:500 21px/1.3 "Archivo Narrow";margin-top:18px}
+.btn{display:inline-block;margin-top:26px;background:#C8102E;color:#fff;font:700 24px/1 "Archivo Narrow";padding:16px 22px}
+.key{margin-top:26px;font:500 17px/1.6 "Archivo Narrow"}
+.tot{position:absolute;right:60px;bottom:60px;background:#1A1A1A;color:#fff;padding:20px 26px}
+.tot b{font:800 72px/1 "Archivo";display:block}
+</style></head><body>
+<svg viewBox="0 0 1440 900">
+ <g fill="none" stroke="#9AA0A6" stroke-width="2">
+  <path d="M600 120 L900 90 L1000 220 L960 330 L760 360 L640 280 Z"/>
+  <path d="M760 360 L960 330 L1080 420 L1040 560 L860 560 L780 470 Z"/>
+  <path d="M860 560 L1040 560 L1100 700 L980 800 L860 740 Z"/>
+  <path d="M1040 560 L1260 520 L1320 680 L1100 700 Z"/>
+  <path d="M1080 420 L1300 380 L1260 520 L1040 560 Z"/>
+ </g>
+ <g stroke="#1F4E9A" stroke-width="5" fill="none"><path d="M620 180 L900 240 L1100 300"/><path d="M700 300 L880 420 L1000 480"/></g>
+ <path d="M1180 640 L1020 640 L940 520 L900 440" stroke="#C8102E" stroke-width="9" fill="none"/>
+ <g fill="#C8102E" stroke="#fff" stroke-width="3"><circle cx="1020" cy="640" r="12"/><circle cx="900" cy="440" r="12"/></g>
+ <g font-family="Archivo Narrow" font-size="24" font-weight="700" fill="#1A1A1A">
+  <text x="1035" y="680">Kireevo/Zaychar · 1.4431 + 0.8494</text>
+  <text x="915" y="425">Kiskundorozsma 2 · 0.9684 + 0.4348</text>
+  <text x="890" y="500">HU</text><text x="980" y="600">RS</text><text x="1190" y="610">BG</text>
+ </g>
+</svg>
+<div class="legend">
+<h1>Click the border points, see what the route costs, book without asking anyone.</h1>
+<p class="who">For gas traders who move gas across the borders of Central and Eastern Europe.</p>
+<a class="btn">Open the calculator</a>
+<p class="key">— Lit route: BG &rarr; RS &rarr; HU, 1 Oct 2026 to 31 Mar 2027</p>
+</div>
+<div class="tot">Route total, EUR/MWh<b>3.6957</b></div>
+</body></html>

@@ -1,0 +1,113 @@
+{
+  "title": "Choose the visual world for the promo page",
+  "question": "The roll assigned Marker Post. Keep it, take an alternate, or re-roll.",
+  "options": [
+    {
+      "id": "assigned",
+      "kind": "assigned",
+      "label": "Marker Post",
+      "kicker": "THE ROLL",
+      "lineage": "yellow gas pipeline marker posts and numbered kilometre plates along a transmission line",
+      "thesis": "The page walks the pipeline: every border is a numbered yellow post carrying its operator and its cost.",
+      "palette": ["#F2C200", "#141414", "#F1EFE7", "#56604C"],
+      "materials": ["powder-coated steel posts", "stencilled lettering", "enamel kilometre plates"],
+      "viewport": "Headline stencilled on a tall yellow post at left; the route BG > RS > HU runs right as numbered posts with their EUR/MWh, ending at 3.6957; Open the calculator is the post's plate.",
+      "risk": "Reads as a building-site hazard sign if yellow turns into warning stripes instead of plates.",
+      "raised": [
+        {"from": "challenger-orizuru", "raise": "Border points are numbered 1 to 4 in a strict margin column, one step per post."},
+        {"from": "challenger-glazier", "raise": "Yellow is reserved for what matters now, the route total and the action; the rest is black on enamel."},
+        {"from": "challenger-ansi", "raise": "Every figure sits in fixed tabular cells that align from post to post."},
+        {"from": "challenger-centre-rail", "raise": "One stroke weight everywhere: posts, plates and the route line share it."},
+        {"from": "challenger-fight", "raise": "The saving is set as two halves: with quarters 3.6957 against without 3.9913."}
+      ],
+      "html": ".impeccable/decision/assigned.html"
+    },
+    {
+      "id": "model-pick",
+      "kind": "pick",
+      "label": "Capacity Map",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "the ENTSOG transmission capacity map poster traders pin on the wall",
+      "thesis": "The page is the network map, with the chosen route lit and priced point by point.",
+      "palette": ["#F6F5F0", "#C8102E", "#1F4E9A", "#1A1A1A"],
+      "materials": ["offset-printed poster map", "technical legend box", "point markers"],
+      "viewport": "A wide schematic map of the 15 countries fills the screen; the BG > RS > HU route is lit with its costs; headline and button sit in the legend box.",
+      "risk": "The most familiar direction for an energy tool, and it can look like the operators' own map.",
+      "html": ".impeccable/decision/pick.html"
+    },
+    {
+      "id": "challenger-segment",
+      "kind": "challenger",
+      "catalogId": "signals-instruments-seven-segment-alarm-clock",
+      "label": "Price Totem",
+      "verdict": "competitive",
+      "lineage": "seven-segment price totems at the roadside",
+      "thesis": "The route cost glows like a fuel price board: 3.6957 in lit segments over ghost cells.",
+      "palette": ["#0F0F0F", "#FFB000", "#FF3B30", "#262626"],
+      "materials": ["LED segments", "matte black panel", "ghost cells"],
+      "viewport": "A totem stacks the three answers as lit readouts: EUR/MWh, EUR plus HUF, the guarantee; headline and action on the totem panel.",
+      "case": "Fuses well: traders read prices off boards daily and the output is a price; loses on audience identification to the pipeline itself.",
+      "risk": "Turns into a gas-station gimmick if segments spread beyond the numbers.",
+      "hero": "https://impeccable.style/worlds/cards/signals-instruments-seven-segment-alarm-clock-hero.webp",
+      "html": ".impeccable/decision/segment.html"
+    },
+    {
+      "id": "challenger-ansi", "kind": "challenger", "catalogId": "medium-native-ansi-bbs-nightboard",
+      "label": "ANSI Nightboard", "verdict": "declined", "lineage": "dial-up bulletin boards",
+      "thesis": "The calculator as a text-mode board.", "palette": ["#000000", "#00AAAA", "#AA00AA", "#FFFFFF"],
+      "materials": ["block glyphs", "terminal black"], "viewport": "Title art over numbered menu lines.",
+      "case": "Fuses poorly: traders and strangers do not identify with a BBS, and it hides the numbers.",
+      "risk": "Pure nostalgia costume.", "kept": "Figures in fixed cells on one grid.",
+      "hero": "https://impeccable.style/worlds/cards/medium-native-ansi-bbs-nightboard-hero.webp"
+    },
+    {
+      "id": "challenger-glazier", "kind": "challenger", "catalogId": "craft-making-glazier-colorfield-partition",
+      "label": "Glazier Partition", "verdict": "declined", "lineage": "steel-framed glass walls",
+      "thesis": "Each answer is a pane; one lights up.", "palette": ["#111111", "#EEF1F0", "#1F4FBF", "#C98A1B"],
+      "materials": ["glazing bars", "seeded glass"], "viewport": "A wall of panes, the route total backlit.",
+      "case": "Fuses poorly: no link to gas or routes.", "risk": "Pretty but mute.",
+      "kept": "One saturated colour reserved for what matters now.",
+      "hero": "https://impeccable.style/worlds/cards/craft-making-glazier-colorfield-partition-hero.webp"
+    },
+    {
+      "id": "challenger-orizuru", "kind": "challenger", "catalogId": "paper-folds-pleats-deployable-orizuru-crane-sequence",
+      "label": "Crane Sequence", "verdict": "declined", "lineage": "origami fold diagrams",
+      "thesis": "The route folds step by step.", "palette": ["#D9381E", "#F4E9DC", "#1B1B1B", "#C9A227"],
+      "materials": ["washi", "crease lines"], "viewport": "A red sheet with numbered folds.",
+      "case": "Fuses poorly: borrowed culture, no audience tie.", "risk": "Decorative theft.",
+      "kept": "Numbered steps in a strict margin column.",
+      "hero": "https://impeccable.style/worlds/cards/paper-folds-pleats-deployable-orizuru-crane-sequence-hero.webp"
+    },
+    {
+      "id": "challenger-centre-rail", "kind": "challenger", "catalogId": "rw-centre-rail-reference-setting",
+      "label": "Centre-Rail Edition", "verdict": "declined", "lineage": "reference-book setting",
+      "thesis": "The tariffs as an annotated edition.", "palette": ["#161616", "#B8341B", "#EFE8DA"],
+      "materials": ["hairline rules", "bone paper"], "viewport": "Two dense columns round a keyed rail.",
+      "case": "Fuses poorly: too bookish for a promo page; strangers stall.", "risk": "Reads as homework.",
+      "kept": "One rule weight everywhere.",
+      "hero": "https://impeccable.style/worlds/cards/rw-centre-rail-reference-setting-hero.webp"
+    },
+    {
+      "id": "challenger-fight", "kind": "challenger", "catalogId": "posters-covers-sleeves-fight-poster",
+      "label": "Fight Poster", "verdict": "declined", "lineage": "boxing bills",
+      "thesis": "Quarters versus months, on the bill.", "palette": ["#EFE6D2", "#141414", "#C9A227"],
+      "materials": ["slab caps", "newsprint"], "viewport": "Two prices collide at a VS mark.",
+      "case": "Fuses poorly: only the saving fits the form.", "risk": "Shouty, and only one idea.",
+      "kept": "A comparison as two halves.",
+      "hero": "https://impeccable.style/worlds/cards/posters-covers-sleeves-fight-poster-hero.webp"
+    }
+  ],
+  "reroll": {"registers": ["safer", "bolder"]},
+  "buildPath": {"value": "code", "toggle": false},
+  "canon": true,
+  "canonCard": {
+    "kind": "canon",
+    "label": "The category standard",
+    "thesis": "A clean software landing page, executed impeccably.",
+    "palette": ["#FFFFFF", "#0F172A", "#2563EB"],
+    "materials": ["clean grid", "app screenshots"],
+    "viewport": "Headline and button on the left, a screenshot of the map tab on the right, three feature cards below.",
+    "risk": "Indistinguishable from every other tool page by design."
+  },
+  "steer": true
+}

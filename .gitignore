@@ -23,3 +23,7 @@ __pycache__/
 .claude/agents/impeccable-*.md
 # The teacher's class slides stay local.
 08.pdf
+
+# Impeccable runtime state (decision-page server logs and seeds); the decision payload and sketches in .impeccable/decision/ are committed.
+.impeccable/questions/
+.impeccable/decision/answer.txt

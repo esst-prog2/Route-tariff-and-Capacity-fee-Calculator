@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Marker Post sketch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil+Display:wght@700;900&family=Barlow+Semi+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{--y:#F2C200;--k:#141414;--e:#F1EFE7;--f:#56604C;--w:3px}
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;background:var(--e);color:var(--k);font-family:"Barlow Semi Condensed",sans-serif;overflow:hidden;position:relative}
+.post{position:absolute;left:96px;top:0;width:470px;height:900px;background:var(--y);border-left:var(--w) solid var(--k);border-right:var(--w) solid var(--k);padding:72px 44px}
+.post .cap{position:absolute;left:-3px;right:-3px;top:0;height:40px;background:var(--k)}
+.kicker{font:600 18px/1.2 "Barlow Semi Condensed";letter-spacing:.14em;text-transform:uppercase;margin-top:28px}
+h1{font:900 76px/.92 "Big Shoulders Stencil Display";text-transform:uppercase;margin-top:22px}
+.who{font:500 24px/1.3 "Barlow Semi Condensed";margin-top:28px;max-width:360px}
+.btn{display:inline-block;margin-top:40px;background:var(--k);color:var(--y);font:900 34px/1 "Big Shoulders Stencil Display";text-transform:uppercase;padding:20px 26px}
+.field{position:absolute;left:566px;right:0;top:0;bottom:0}
+.line{position:absolute;left:0;right:150px;top:470px;height:var(--w);background:var(--k)}
+.mp{position:absolute;top:300px;width:150px}
+.mp .stick{width:44px;height:170px;background:var(--y);border:var(--w) solid var(--k);margin-left:20px}
+.mp .n{font:900 44px/1 "Big Shoulders Stencil Display";margin-left:22px}
+.mp .pt{font:600 20px/1.2 "Barlow Semi Condensed";margin-top:200px;position:absolute;top:0}
+.mp .eur{font:600 30px/1 "Barlow Semi Condensed";font-variant-numeric:tabular-nums;position:absolute;top:250px}
+.total{position:absolute;right:56px;top:560px;background:var(--k);color:var(--y);padding:24px 28px;width:330px}
+.total b{display:block;font:900 96px/.9 "Big Shoulders Stencil Display"}
+.total span{font:600 22px/1.2 "Barlow Semi Condensed";color:var(--e)}
+.route{position:absolute;left:40px;top:90px;font:900 40px/1 "Big Shoulders Stencil Display";text-transform:uppercase}
+.sub{position:absolute;left:40px;top:142px;font:500 22px/1.3 "Barlow Semi Condensed";max-width:560px}
+</style></head><body>
+<div class="post"><div class="cap"></div>
+<div class="kicker">Gas route cost calculator</div>
+<h1>Click the border points. See the route cost. Book without asking.</h1>
+<p class="who">For gas traders who move gas across the borders of Central and Eastern Europe.</p>
+<a class="btn">Open the calculator &rarr;</a>
+</div>
+<div class="field">
+<div class="route">BG &rarr; RS &rarr; HU</div>
+<p class="sub">1 Oct 2026 to 31 Mar 2027 at 400 HUF per EUR, the cheapest products for each operator.</p>
+<div class="line"></div>
+<div class="mp" style="left:30px"><div class="n">1</div><div class="stick"></div><div class="pt">Bulgartransgaz exit</div><div class="eur">1.4431</div></div>
+<div class="mp" style="left:210px"><div class="n">2</div><div class="stick"></div><div class="pt">Gastrans entry</div><div class="eur">0.8494</div></div>
+<div class="mp" style="left:390px"><div class="n">3</div><div class="stick"></div><div class="pt">Gastrans exit</div><div class="eur">0.9684</div></div>
+<div class="mp" style="left:570px"><div class="n">4</div><div class="stick"></div><div class="pt">FGSZ entry</div><div class="eur">0.4348</div></div>
+<div class="total"><span>Route total, EUR/MWh</span><b>3.6957</b><span>Quarters save 0.2956</span></div>
+</div>
+</body></html>
