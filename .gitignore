@@ -16,3 +16,10 @@ __pycache__/
 .env
 .streamlit/secrets.toml
 .claude/settings.local.json
+
+# Impeccable (npx impeccable install --providers=claude --scope=project) is reinstalled, not committed:
+# it is 24 MB with a Windows binary. Its hooks live in .claude/settings.local.json, ignored above.
+.claude/skills/impeccable/
+.claude/agents/impeccable-*.md
+# The teacher's class slides stay local.
+08.pdf
