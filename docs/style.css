@@ -143,6 +143,12 @@ section { padding-block: clamp(56px, 8vw, 112px) 0; }
 h2 { font-size: clamp(1.9rem, 3vw, 2.8rem); line-height: 1.1; font-weight: 800; font-stretch: var(--narrow); letter-spacing: -0.01em; text-wrap: balance; }
 h3 { font-size: 1.35rem; line-height: 1.2; font-weight: 700; font-stretch: var(--wide); }
 
+.film { padding-block: clamp(48px, 6vw, 88px) 0; }
+.film h2 { margin-bottom: clamp(20px, 2.5vw, 32px); }
+.film-player { max-width: 1090px; background: var(--panel); border: var(--stroke) solid var(--rule); box-shadow: 0 6px 24px rgb(21 24 26 / 0.1); }
+.film-player video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; background: var(--sea); }
+.film-player figcaption { border-top: 1px solid var(--border); padding: 0.6em 0.9em; font-size: 0.95rem; color: var(--ink-2); max-width: none; text-wrap: pretty; }
+
 .problem-text { max-width: 30ch; font-size: clamp(1.9rem, 3.4vw, 3.1rem); font-weight: 700; }
 .before-after { margin-top: clamp(32px, 4vw, 56px); display: grid; grid-template-columns: 1fr 1fr; border: var(--stroke) solid var(--rule); background: var(--panel); }
 .ba { padding: 1.6rem 1.6rem 1.8rem; }
