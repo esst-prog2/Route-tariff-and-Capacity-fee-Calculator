@@ -70,6 +70,13 @@
     <div id="root" data-composition-id="main" data-start="0" data-duration="30" data-width="1920" data-height="1080">
       <div id="ground"></div>
 
+      <!-- voiceover: Kokoro (local), voice am_michael; one line per scene -->
+      <audio id="vo1" src="assets/voice/l1.wav" data-start="0.25" data-duration="7.66" data-track-index="5" data-volume="1"></audio>
+      <audio id="vo2" src="assets/voice/l2.wav" data-start="8.3" data-duration="3.52" data-track-index="5" data-volume="1"></audio>
+      <audio id="vo3" src="assets/voice/l3.wav" data-start="13.6" data-duration="7.06" data-track-index="5" data-volume="1"></audio>
+      <audio id="vo4" src="assets/voice/l4.wav" data-start="21.3" data-duration="4.05" data-track-index="5" data-volume="1"></audio>
+      <audio id="vo5" src="assets/voice/l5.wav" data-start="27.6" data-duration="1.19" data-track-index="5" data-volume="1"></audio>
+
       <!-- 1  HOOK  0 - 3.4 s ----------------------------------------------------------------- -->
       <div id="s1" class="clip scene" data-start="0" data-duration="3.4" data-track-index="1">
         <div class="mapwrap" data-layout-allow-overflow style="left: 0">
@@ -294,7 +301,7 @@
       wipeL("#s6-band", s6 + 0.05, 0.6);
       tl.fromTo("#s6-tag", { opacity: 0, x: -50 }, { opacity: 1, x: 0, duration: 0.45, ease: "power3.out" }, s6 + 0.45);
       tl.fromTo("#s6-btn", { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.5, ease: "power3.out" }, s6 + 0.7);
-      tl.fromTo("#s6-url", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power2.out" }, s6 + 1.0);
+      tl.fromTo("#s6-url", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power2.out" }, s6 + 0.85);
       tl.fromTo("#s6-cursor", { x: 1100, y: 1000 }, { x: 733, duration: 0.9, ease: "power2.inOut" }, s6 + 0.95);
       tl.fromTo("#s6-cursor", { y: 1000 }, { y: 720, duration: 0.9, ease: "power3.inOut" }, s6 + 0.95);
       ringAt("#s6-ring", s6 + 2.0);

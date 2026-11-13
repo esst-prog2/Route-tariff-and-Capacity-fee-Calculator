@@ -1,12 +1,12 @@
 # SPEC: 30-second promo video, Route Tariff and Capacity Fee Calculator
 
-Story (chosen by the user): the page's headline, click / see / know. Silent film; the words are on-screen captions.
+Story (chosen by the user): the page's headline, click / see / know, with on-screen captions and (added later) a Kokoro voiceover.
 Every pixel that claims to be the product is a real capture of the running app (`video/tools/capture_app.mjs`, 2x density, light theme). Every number is one the app shows and `tests/` asserts.
 
 ```text
 GOAL:    Someone who has never heard of it understands in 30 s what it is for (the cost of moving gas
          across borders, answered by clicking), who it is for (gas traders), and that they can try it.
-OUTPUT:  HyperFrames, 1920 x 1080, 30 fps, MP4, silent.
+OUTPUT:  HyperFrames, 1920 x 1080, 30 fps, MP4 with an AAC voice track.
 TIME:    30.0 s x 30 fps = 900 frames.
 LOOK:    the page's own world, "Capacity Map". Ground #D6E1E7 (the map's sea), panels white (the app's
          own screens), ink #15181A, ONE accent red #C8102E (the route, the click, the total, the button;
@@ -56,3 +56,8 @@ QA (checked in the render): frame 0 (hook: map + the question, not black); 100 (
 - Fixed: the second click ring showed before its click and the cursor sat on the map before entering (a fromTo's start values applied at creation; every later fromTo on an element now runs with immediateRender: false); the end-card address broke mid-word; the cursor covered the button label on the held last frame; the "Know" subtitles were too long to read in their time and were cut to "50,000 kWh/d, Q4 2026" and "100,000 kWh/h, Q4 2026, CEGHIX 30".
 - Left as is: HyperFrames suggests one sub-composition file per scene (the film stays one file); "film_silent" (silent by the user's choice, captions only).
 - Render: docs/video/promo.mp4, H.264 1920x1080, 30 fps, 30.0 s, 5.0 MB (quality "looks", CRF 16); poster docs/video/poster.jpg is frame 0.
+
+## Voiceover (added 2026-11-13, at the user's request)
+- Voice: Kokoro-82M on this machine (`hyperframes tts`), voice `am_michael`, speed 1.0; files `assets/voice/l1.wav` to `l5.wav`, one line per scene. The script is the user-approved draft; "3.70 euros" is written "three euros seventy" so the voice says it naturally. The captions stay; the voice does not read them word for word.
+- Placement: l1 0.25-7.9 s (question, three operators), l2 8.3-11.8 s (the two clicks at 10.2 and 11.6 s), l3 13.6-20.7 s (the total lands at 18.2 s), l4 21.3-25.4 s (the guarantee appears at 24.2 s), l5 27.6-28.8 s (the cursor clicks the button).
+- Render: 5.5 MB, H.264 + AAC 48 kHz stereo; voice peaks at -2.0 dBFS, -20.9 LUFS integrated.
