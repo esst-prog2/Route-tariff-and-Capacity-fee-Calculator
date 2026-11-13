@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Route Tariff and Capacity Fee Calculator: 30 s promo</title>
+    <script src="assets/vendor/gsap.min.js"></script>
+    <style>
+      @font-face {
+        font-family: "Archivo";
+        src: url("assets/fonts/archivo-latin-wdth.woff2") format("woff2");
+        font-weight: 100 900;
+        font-stretch: 62% 125%;
+        unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+      }
+      @font-face {
+        font-family: "Archivo";
+        src: url("assets/fonts/archivo-latin-ext-wdth.woff2") format("woff2");
+        font-weight: 100 900;
+        font-stretch: 62% 125%;
+        unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+      }
+      :root {
+        --sea: #d6e1e7;
+        --ink: #15181a;
+        --ink2: #3d454b;
+        --red: #c8102e;
+        --panel: #ffffff;
+        --shadow: 0 14px 40px rgba(21, 24, 26, 0.16);
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--sea); }
+      body { font-family: "Archivo", sans-serif; color: var(--ink); }
+      #root { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; }
+      #ground { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; background: var(--sea); }
+      .scene { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; }
+      .abs { position: absolute; }
+
+      /* type */
+      .h { font-weight: 800; font-stretch: 78%; letter-spacing: -0.01em; line-height: 0.98; white-space: nowrap; }
+      .ln { overflow: visible; }
+      .body { font-weight: 600; font-size: 40px; line-height: 1.2; }
+      .small { font-weight: 600; font-size: 30px; line-height: 1.25; color: var(--ink2); }
+
+      /* the real map, cropped to 1010 x 1080 */
+      .mapwrap { position: absolute; top: 0; width: 1010px; height: 1080px; overflow: hidden; background: #fff; }
+      .mapzoom { position: absolute; left: 0; top: 0; width: 1010px; height: 1080px; }
+      .mapimg { position: absolute; left: -100px; top: 0; width: 1181px; height: 1080px; }
+      .rule-v { position: absolute; top: 0; width: 4px; height: 1080px; background: var(--ink); }
+
+      /* real product pieces */
+      .shot { position: absolute; background: #fff; box-shadow: var(--shadow); }
+      .shot img { display: block; }
+      .outline { position: absolute; border: 5px solid var(--red); border-radius: 8px; }
+
+      /* the only drawn objects */
+      .ring { position: absolute; width: 150px; height: 150px; border: 8px solid var(--red); border-radius: 50%; opacity: 0; }
+      .cursor { position: absolute; left: 0; top: 0; width: 46px; height: 64px; }
+
+      /* shot 2 table */
+      .row-line { position: absolute; left: 192px; width: 1536px; height: 3px; background: var(--ink); }
+      .cell { position: absolute; font-size: 56px; font-weight: 800; font-stretch: 78%; letter-spacing: -0.005em; white-space: nowrap; }
+      .colhead { position: absolute; font-size: 30px; font-weight: 600; color: var(--ink2); white-space: nowrap; }
+
+      /* shot 4 running sum */
+      .sum { position: absolute; left: 192px; width: 420px; text-align: right; font-weight: 800; font-stretch: 78%; font-size: 84px; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="30" data-width="1920" data-height="1080">
+      <div id="ground"></div>
+
+      <!-- 1  HOOK  0 - 3.4 s ----------------------------------------------------------------- -->
+      <div id="s1" class="clip scene" data-start="0" data-duration="3.4" data-track-index="1">
+        <div class="mapwrap" data-layout-allow-overflow style="left: 0">
+          <div id="s1-zoom" class="mapzoom"><img class="mapimg" src="assets/shots/map-s1-start.png" alt="" /></div>
+        </div>
+        <div class="rule-v" style="left: 1010px"></div>
+        <div id="s1-text" class="abs" style="left: 1090px; top: 346px">
+          <div class="ln h" style="font-size: 100px">Bulgaria</div>
+          <div class="ln h" style="font-size: 100px">to Hungary.</div>
+          <div class="ln h" style="font-size: 100px; margin-top: 30px">What does the</div>
+          <div class="ln h" style="font-size: 100px">route cost?</div>
+        </div>
+      </div>
+
+      <!-- 2  THREE OPERATORS  3.4 - 8.0 s ---------------------------------------------------- -->
+      <div id="s2" class="clip scene" data-start="3.4" data-duration="4.6" data-track-index="1">
+        <div class="abs" style="left: 192px; top: 120px">
+          <div id="s2-l1" class="ln h" style="font-size: 104px">Three operators.</div>
+          <div id="s2-l2" class="ln h" style="font-size: 104px">Two currencies.</div>
+          <div id="s2-l3" class="ln h" style="font-size: 104px">Two units.</div>
+        </div>
+        <div id="s2-table">
+          <div class="colhead" id="s2-h1" style="left: 192px; top: 536px">Operator</div>
+          <div class="colhead" id="s2-h2" style="left: 1000px; top: 536px">Currency</div>
+          <div class="colhead" id="s2-h3" style="left: 1290px; top: 536px">Capacity unit</div>
+          <div class="row-line" id="s2-r0" style="top: 580px"></div>
+          <div class="row-line" id="s2-r1" style="top: 690px"></div>
+          <div class="row-line" id="s2-r2" style="top: 800px"></div>
+          <div class="row-line" id="s2-r3" style="top: 910px"></div>
+          <div class="cell s2-op" style="left: 192px; top: 604px">Bulgartransgaz</div>
+          <div class="cell s2-op" style="left: 192px; top: 714px">Gastrans</div>
+          <div class="cell s2-op" style="left: 192px; top: 824px">FGSZ</div>
+          <div class="cell s2-cur" style="left: 1000px; top: 604px">EUR</div>
+          <div class="cell s2-cur" style="left: 1000px; top: 714px">EUR</div>
+          <div class="cell s2-cur" style="left: 1000px; top: 824px">HUF</div>
+          <div class="cell s2-unit" style="left: 1290px; top: 604px">kWh/d</div>
+          <div class="cell s2-unit" style="left: 1290px; top: 714px">kWh/h</div>
+          <div class="cell s2-unit" style="left: 1290px; top: 824px">kWh/h</div>
+        </div>
+      </div>
+
+      <!-- 3  CLICK  8.0 - 13.4 s ------------------------------------------------------------- -->
+      <div id="s3" class="clip scene" data-start="8.0" data-duration="5.4" data-track-index="1">
+        <div class="mapwrap" data-layout-allow-overflow style="left: 0">
+          <div id="s3-zoom" class="mapzoom">
+            <img class="mapimg" src="assets/shots/map-s1-start.png" alt="" />
+            <img id="s3-m2" class="mapimg" src="assets/shots/map-s2-first.png" alt="" style="opacity: 0" />
+            <img id="s3-m3" class="mapimg" src="assets/shots/map-s3b-route.png" alt="" style="opacity: 0" />
+          </div>
+        </div>
+        <div class="rule-v" style="left: 1010px"></div>
+        <div id="s3-text" class="abs" style="left: 1090px; top: 400px">
+          <div id="s3-l1" class="ln h" style="font-size: 96px">Click the</div>
+          <div id="s3-l2" class="ln h" style="font-size: 96px">border points.</div>
+        </div>
+        <div id="s3-ring1" class="ring" style="left: 717px; top: 693px"></div>
+        <div id="s3-ring2" class="ring" style="left: 525px; top: 466px"></div>
+        <svg id="s3-cursor" class="cursor" viewBox="0 0 46 64" aria-hidden="true">
+          <path d="M2 2 L2 50 L14 39 L23 60 L31 56 L22 36 L38 36 Z" fill="#15181a" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" />
+        </svg>
+      </div>
+
+      <!-- 4  SEE  13.4 - 21.0 s -------------------------------------------------------------- -->
+      <div id="s4" class="clip scene" data-start="13.4" data-duration="7.6" data-track-index="1">
+        <div class="abs" style="left: 192px; top: 96px">
+          <div id="s4-l1" class="ln h" style="font-size: 92px">See the</div>
+          <div id="s4-l2" class="ln h" style="font-size: 92px">whole route</div>
+          <div id="s4-l3" class="ln h" style="font-size: 92px">cost.</div>
+        </div>
+        <div class="sum" id="s4-n1" style="top: 420px">1.4431</div>
+        <div class="sum" id="s4-n2" style="top: 510px">+ 0.8494</div>
+        <div class="sum" id="s4-n3" style="top: 600px">+ 0.9684</div>
+        <div class="sum" id="s4-n4" style="top: 690px">+ 0.4348</div>
+        <div id="s4-sumrule" class="abs" style="left: 192px; top: 794px; width: 420px; height: 6px; background: var(--ink)"></div>
+        <div class="sum" id="s4-total" style="top: 812px; color: var(--red); font-size: 100px">3.6957</div>
+
+        <div id="s4-points" class="shot" style="left: 760px; top: 150px; width: 1046px; height: 353px"><img src="assets/shots/see-points.png" width="1046" height="353" alt="The route's four network points with their EUR/MWh" /></div>
+        <div id="s4-totals" class="shot" style="left: 760px; top: 600px; width: 1075px; height: 283px"><img src="assets/shots/see-totals.png" width="1075" height="283" alt="Route total: cheapest combination 3.6957, without quarterly products 3.9913, saving 0.2956" /></div>
+        <!-- outlines: one per cost in turn, then the total, then the saving -->
+        <div class="outline s4-o" id="s4-o1" style="left: 1650px; top: 226px; width: 152px; height: 62px"></div>
+        <div class="outline s4-o" id="s4-o2" style="left: 1650px; top: 296px; width: 152px; height: 62px"></div>
+        <div class="outline s4-o" id="s4-o3" style="left: 1650px; top: 366px; width: 152px; height: 62px"></div>
+        <div class="outline s4-o" id="s4-o4" style="left: 1650px; top: 436px; width: 152px; height: 62px"></div>
+        <div class="outline s4-o" id="s4-o5" style="left: 764px; top: 676px; width: 1066px; height: 62px"></div>
+        <div class="outline s4-o" id="s4-o6" style="left: 764px; top: 816px; width: 1066px; height: 62px"></div>
+      </div>
+
+      <!-- 5  KNOW  21.0 - 26.8 s ------------------------------------------------------------- -->
+      <div id="s5" class="clip scene" data-start="21.0" data-duration="5.8" data-track-index="1">
+        <div class="abs" style="left: 192px; top: 96px">
+          <div id="s5-l1" class="ln h" style="font-size: 96px">Know what to book:</div>
+          <div class="ln h" style="font-size: 96px; position: relative; height: 96px; width: 900px">
+            <span id="s5-a" style="position: absolute; left: 0; top: 0">the invoices.</span>
+            <span id="s5-b" style="position: absolute; left: 0; top: 0; opacity: 0">the guarantee.</span>
+          </div>
+        </div>
+        <div id="s5-sub" class="abs small" style="left: 192px; top: 312px; width: 1500px">
+          <span id="s5-suba">50,000 kWh/d, Q4 2026</span>
+          <span id="s5-subb" style="position: absolute; left: 0; top: 0; opacity: 0; white-space: nowrap">100,000 kWh/h, Q4 2026, CEGHIX 30</span>
+        </div>
+
+        <div id="s5-gca" class="shot" style="left: 116px; top: 392px; width: 1688px; height: 276px"><img src="assets/shots/fee-gca-top.png" width="1688" height="276" alt="Gas Connect Austria exit: total cost 2,605.83 EUR" /></div>
+        <div id="s5-fgsz" class="shot" style="left: 116px; top: 704px; width: 1688px; height: 276px"><img src="assets/shots/fee-fgsz-top.png" width="1688" height="276" alt="FGSZ entry: total cost 782,558 HUF" /></div>
+        <div id="s5-o1" class="outline" style="left: 1236px; top: 524px; width: 290px; height: 128px"></div>
+        <div id="s5-o2" class="outline" style="left: 1236px; top: 836px; width: 290px; height: 128px"></div>
+
+        <div id="s5-guar" class="shot" style="left: 116px; top: 440px; width: 1688px; height: 382px"><img src="assets/shots/guarantee.png" width="1688" height="382" alt="Eustream guarantee: total 280,104.80 EUR" /></div>
+        <div id="s5-o3" class="outline" style="left: 1479px; top: 655px; width: 301px; height: 150px"></div>
+      </div>
+
+      <!-- 6  END CARD  26.8 - 30.0 s --------------------------------------------------------- -->
+      <div id="s6" class="clip scene" data-start="26.8" data-duration="3.2" data-track-index="1">
+        <div class="mapwrap" data-layout-allow-overflow style="left: 910px">
+          <div class="mapzoom"><img class="mapimg" src="assets/shots/map-s3b-route.png" alt="" /></div>
+        </div>
+        <div class="rule-v" style="left: 906px"></div>
+        <div id="s6-band" class="abs" style="left: 192px; top: 150px; width: 640px; background: var(--ink); padding: 34px 40px 40px">
+          <div class="h" style="font-size: 76px; color: #fff">Route Tariff and</div>
+          <div class="h" style="font-size: 76px; color: #fff">Capacity Fee</div>
+          <div class="h" style="font-size: 76px; color: #fff">Calculator</div>
+        </div>
+        <div id="s6-tag" class="abs body" style="left: 192px; top: 470px; width: 640px">Free. Real tariffs of 21 operators.</div>
+        <div id="s6-btn" class="abs" style="left: 192px; top: 616px; height: 112px; padding: 0 40px; background: var(--red); color: #fff; font-size: 50px; font-weight: 800; font-stretch: 100%; display: flex; align-items: center; white-space: nowrap; border-radius: 4px">Open the calculator</div>
+        <div id="s6-url" class="abs small" style="left: 192px; top: 770px; width: 700px; white-space: nowrap; font-size: 29px">route-tariff-and-capacity-fee-calculator<br />.streamlit.app</div>
+        <div id="s6-ring" class="ring" style="left: 658px; top: 645px"></div>
+        <svg id="s6-cursor" class="cursor" viewBox="0 0 46 64" aria-hidden="true">
+          <path d="M2 2 L2 50 L14 39 L23 60 L31 56 L22 36 L38 36 Z" fill="#15181a" stroke="#ffffff" stroke-width="4" stroke-linejoin="round" />
+        </svg>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      // Every element's first tween sets its resting state; later fromTo()s on the same element must not
+      // re-apply their "from" values before they run (immediateRender: false), or the last one would win at seek time.
+      const seen = new Set();
+      const fromTo = tl.fromTo.bind(tl);
+      tl.fromTo = (targets, from, to, at) => {
+        const els = gsap.utils.toArray(targets);
+        if (els.some((e) => seen.has(e))) to = { ...to, immediateRender: false };
+        els.forEach((e) => seen.add(e));
+        return fromTo(targets, from, to, at);
+      };
+      const wipeL = (sel, at, d = 0.5) => tl.fromTo(sel, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: d, ease: "power3.out" }, at);
+      const wipeT = (sel, at, d = 0.5) => tl.fromTo(sel, { clipPath: "inset(0 0 100% 0)" }, { clipPath: "inset(0 0 0% 0)", duration: d, ease: "power3.out" }, at);
+      const pop = (sel, at, d = 0.4) => tl.fromTo(sel, { opacity: 0, scale: 0.88, transformOrigin: "100% 50%" }, { opacity: 1, scale: 1, duration: d, ease: "power3.out" }, at);
+      const ringAt = (sel, at) => {
+        tl.fromTo(sel, { opacity: 0.95, scale: 0.4 }, { opacity: 0, scale: 1, duration: 0.45, ease: "power2.out", immediateRender: false }, at);
+      };
+
+      /* ---- 1  Hook: the question is on screen from frame 0; the map drifts in slowly -------- */
+      tl.fromTo("#s1-zoom", { scale: 1, transformOrigin: "696px 654px" }, { scale: 1.05, duration: 3.4, ease: "none" }, 0);
+
+      /* ---- 2  Three operators: each line fills one column of the real facts ------------------ */
+      const s2 = 3.4;
+      tl.fromTo(["#s2-r0", "#s2-r1", "#s2-r2", "#s2-r3"], { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.6, ease: "power3.out", stagger: 0.08 }, s2 + 0.1);
+      tl.fromTo("#s2-l1", { x: -90, opacity: 0 }, { x: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, s2 + 0.15);
+      tl.fromTo(["#s2-h1", ".s2-op"], { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out", stagger: 0.12 }, s2 + 0.35);
+      tl.fromTo("#s2-l2", { x: -90, opacity: 0 }, { x: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, s2 + 1.5);
+      tl.fromTo(["#s2-h2", ".s2-cur"], { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out", stagger: 0.12 }, s2 + 1.7);
+      tl.fromTo("#s2-l3", { x: -90, opacity: 0 }, { x: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, s2 + 2.85);
+      tl.fromTo(["#s2-h3", ".s2-unit"], { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out", stagger: 0.12 }, s2 + 3.05);
+
+      /* ---- 3  Click: push onto the route, two real clicks, pull back ------------------------- */
+      const s3 = 8.0;
+      tl.fromTo("#s3-zoom", { scale: 1, transformOrigin: "696px 654px" }, { scale: 1.5, duration: 1.1, ease: "expo.out" }, s3);
+      wipeT("#s3-l1", s3 + 0.2);
+      wipeT("#s3-l2", s3 + 0.5);
+      // cursor tip: Kireevo/Zaychar (792, 768), then Kiskundorozsma 2 (600, 541)
+      tl.fromTo("#s3-cursor", { x: 1500, y: 1020 }, { x: 790, duration: 1.1, ease: "power2.inOut" }, s3 + 0.9);
+      tl.fromTo("#s3-cursor", { y: 1020 }, { y: 766, duration: 1.1, ease: "power3.inOut" }, s3 + 0.9);
+      ringAt("#s3-ring1", s3 + 2.15);
+      tl.fromTo("#s3-m2", { opacity: 0 }, { opacity: 1, duration: 0.12, ease: "none" }, s3 + 2.15);
+      tl.fromTo("#s3-cursor", { x: 790 }, { x: 598, duration: 0.9, ease: "power3.inOut" }, s3 + 2.55);
+      tl.fromTo("#s3-cursor", { y: 766 }, { y: 539, duration: 0.9, ease: "power2.inOut" }, s3 + 2.55);
+      ringAt("#s3-ring2", s3 + 3.6);
+      tl.fromTo("#s3-m3", { opacity: 0 }, { opacity: 1, duration: 0.12, ease: "none" }, s3 + 3.6);
+      tl.fromTo("#s3-cursor", { x: 598, y: 539 }, { x: 1500, y: 960, duration: 0.7, ease: "power2.in" }, s3 + 4.05);
+      tl.fromTo("#s3-zoom", { scale: 1.5 }, { scale: 1, duration: 0.9, ease: "power2.inOut" }, s3 + 4.2);
+
+      /* ---- 4  See: the four costs add up to the route total ----------------------------------- */
+      const s4 = 13.4;
+      wipeL("#s4-l1", s4 + 0.05);
+      wipeL("#s4-l2", s4 + 0.2);
+      wipeL("#s4-l3", s4 + 0.35);
+      tl.fromTo("#s4-points", { x: 140, opacity: 0 }, { x: 0, opacity: 1, duration: 0.6, ease: "power3.out" }, s4 + 0.1);
+      tl.fromTo("#s4-totals", { x: 140, opacity: 0 }, { x: 0, opacity: 1, duration: 0.6, ease: "power3.out" }, s4 + 0.3);
+      const costs = [["#s4-o1", "#s4-n1"], ["#s4-o2", "#s4-n2"], ["#s4-o3", "#s4-n3"], ["#s4-o4", "#s4-n4"]];
+      costs.forEach(([o, n], i) => {
+        const t = s4 + 1.4 + i * 0.75;
+        tl.fromTo(o, { opacity: 0 }, { opacity: 1, duration: 0.12, ease: "none" }, t);
+        pop(n, t + 0.1);
+        tl.fromTo(o, { opacity: 1 }, { opacity: 0, duration: 0.2, ease: "power2.in" }, t + 0.7);
+      });
+      tl.fromTo("#s4-sumrule", { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.4, ease: "power3.out" }, s4 + 4.5);
+      tl.fromTo("#s4-total", { opacity: 0, scale: 0.8, transformOrigin: "100% 50%" }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.6)" }, s4 + 4.75);
+      tl.fromTo("#s4-o5", { opacity: 0 }, { opacity: 1, duration: 0.15, ease: "none" }, s4 + 4.75);
+      tl.fromTo("#s4-o5", { opacity: 1 }, { opacity: 0, duration: 0.2, ease: "power2.in" }, s4 + 6.0);
+      tl.fromTo("#s4-o6", { opacity: 0 }, { opacity: 1, duration: 0.15, ease: "none" }, s4 + 6.15);
+
+      /* ---- 5  Know: the two invoices, then the guarantee ------------------------------------- */
+      const s5 = 21.0;
+      wipeL("#s5-l1", s5 + 0.05);
+      tl.fromTo("#s5-a", { opacity: 0, x: -40 }, { opacity: 1, x: 0, duration: 0.45, ease: "power3.out" }, s5 + 0.3);
+      tl.fromTo("#s5-sub", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power2.out" }, s5 + 0.5);
+      tl.fromTo("#s5-gca", { y: 90, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: "power3.out" }, s5 + 0.4);
+      tl.fromTo("#s5-fgsz", { y: 90, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: "power3.out" }, s5 + 0.6);
+      tl.fromTo("#s5-o1", { opacity: 0 }, { opacity: 1, duration: 0.15, ease: "none" }, s5 + 1.3);
+      tl.fromTo("#s5-o2", { opacity: 0 }, { opacity: 1, duration: 0.15, ease: "none" }, s5 + 1.9);
+      // 5b at 24.0 s: the invoices make way for the guarantee
+      tl.fromTo(["#s5-gca", "#s5-fgsz", "#s5-o1", "#s5-o2"], { opacity: 1 }, { opacity: 0, duration: 0.2, ease: "power2.in" }, s5 + 2.9);
+      tl.fromTo("#s5-a", { opacity: 1, x: 0 }, { opacity: 0, x: 40, duration: 0.2, ease: "power2.in" }, s5 + 2.9);
+      tl.fromTo("#s5-suba", { opacity: 1 }, { opacity: 0, duration: 0.2, ease: "power2.in" }, s5 + 2.9);
+      tl.fromTo("#s5-b", { opacity: 0, x: -40 }, { opacity: 1, x: 0, duration: 0.45, ease: "power3.out" }, s5 + 3.15);
+      tl.fromTo("#s5-subb", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power2.out" }, s5 + 3.3);
+      tl.fromTo("#s5-guar", { y: 90, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6, ease: "power3.out" }, s5 + 3.15);
+      tl.fromTo("#s5-o3", { opacity: 0 }, { opacity: 1, duration: 0.15, ease: "none" }, s5 + 4.2);
+
+      /* ---- 6  End card: the map returns; the cursor clicks the button ------------------------ */
+      const s6 = 26.8;
+      wipeL("#s6-band", s6 + 0.05, 0.6);
+      tl.fromTo("#s6-tag", { opacity: 0, x: -50 }, { opacity: 1, x: 0, duration: 0.45, ease: "power3.out" }, s6 + 0.45);
+      tl.fromTo("#s6-btn", { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.5, ease: "power3.out" }, s6 + 0.7);
+      tl.fromTo("#s6-url", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power2.out" }, s6 + 1.0);
+      tl.fromTo("#s6-cursor", { x: 1100, y: 1000 }, { x: 733, duration: 0.9, ease: "power2.inOut" }, s6 + 0.95);
+      tl.fromTo("#s6-cursor", { y: 1000 }, { y: 720, duration: 0.9, ease: "power3.inOut" }, s6 + 0.95);
+      ringAt("#s6-ring", s6 + 2.0);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

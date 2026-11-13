@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "buried-raster",
+        "value": "*",
+        "files": [
+          "video/index.html"
+        ],
+        "createdAt": "2026-11-13T10:21:02.614Z",
+        "reason": "Claude: the two map images start at opacity 0 and the GSAP timeline fades each in at its click (verified in snapshots at 10.3 s and 11.7 s); not a buried raster"
+      }
+    ]
+  }
+}

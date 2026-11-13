@@ -30,3 +30,7 @@ __pycache__/
 .impeccable/live/*
 !.impeccable/live/config.json
 .impeccable/decision/gen*.json
+
+# HyperFrames working files (checks, snapshots, caches) and stray renders; the delivered video is docs/video/promo.mp4.
+video/.hyperframes/
+video/renders/
