@@ -709,3 +709,42 @@ def test_tab3_remove_selected_rows_and_clear(real_app):
     at.button(key="guar_clear").click().run()
     assert at.session_state["guar_rows"] == []
     assert any(i.value == "Add a booking to start the list." for i in at.info)
+
+
+# --- the shared password ------------------------------------------------------------
+
+def start_locked() -> AppTest:
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.secrets["app_password"] = "course-2026"
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    return at
+
+
+def test_no_password_set_means_no_password_form():
+    at = start_app()
+    assert len(at.tabs) == 3
+    assert not [t for t in at.text_input if t.label == "Password"]
+
+
+def test_password_set_hides_the_calculator():
+    at = start_locked()
+    assert len(at.tabs) == 0
+    assert [t.label for t in at.text_input] == ["Password"]
+
+
+def test_wrong_password_keeps_the_calculator_hidden():
+    at = start_locked()
+    at.text_input[0].set_value("guess")
+    at.button[0].click().run()
+    assert len(at.tabs) == 0
+    assert [e.value for e in at.error] == ["That password is not right. Check it and try again."]
+
+
+def test_right_password_opens_the_calculator():
+    at = start_locked()
+    at.text_input[0].set_value("course-2026")
+    at.button[0].click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert len(at.tabs) == 3
+    assert not [t for t in at.text_input if t.label == "Password"]

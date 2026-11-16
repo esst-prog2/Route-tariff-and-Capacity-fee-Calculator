@@ -3,6 +3,7 @@ collects inputs and formats results."""
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 from datetime import date
@@ -22,6 +23,43 @@ from core.tariffs import INTERRUPTIBLE, TSO_FORMATS, LoadResult, load_tariffs, r
 st.set_page_config(page_title="Route Tariff and Capacity Fee Calculator", layout="wide")
 
 QUARTER_MONTHS = {1: "Jan-Mar", 2: "Apr-Jun", 3: "Jul-Sep", 4: "Oct-Dec"}
+
+
+# --- access: a shared password, asked for only where one is set --------------------
+
+PASSWORD_SECRET = "app_password"
+PASSWORD_ENV = "APP_PASSWORD"
+UNLOCKED = "unlocked"
+
+
+def _shared_password() -> str:
+    """The password set for this deployment, or "" when there is none (a local run)."""
+    try:
+        secret = st.secrets.get(PASSWORD_SECRET, "")
+    except Exception:  # no secrets file at all
+        secret = ""
+    return str(secret or os.environ.get(PASSWORD_ENV, ""))
+
+
+def require_password() -> None:
+    """Stops the script at a password form until the shared password is entered."""
+    expected = _shared_password()
+    if not expected or st.session_state.get(UNLOCKED):
+        return
+    st.title("Route Tariff and Capacity Fee Calculator")
+    st.write("This app is open to members of the course. Enter the course password to continue.")
+    with st.form("password_form"):
+        entered = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Open the calculator")
+    if submitted:
+        if hmac.compare_digest(entered.encode(), expected.encode()):
+            st.session_state[UNLOCKED] = True
+            st.rerun()
+        st.error("That password is not right. Check it and try again.")
+    st.stop()
+
+
+require_password()
 
 
 # --- data loading (cached per file contents / modification time) -------------------
