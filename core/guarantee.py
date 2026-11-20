@@ -14,8 +14,8 @@ from fractions import Fraction
 from typing import Callable
 
 from .fee import DAY, GAS_YEAR, MONTH, QUARTER, FeeError, FeeResult, calculate_fee
-from .money import EUR, parse_number, round_minor, split_by_weights
-from .points import ENTRY, EUSTREAM, GCA, Point
+from .money import parse_number, round_minor, split_by_weights
+from .points import ENTRY, EUSTREAM, EXIT, FGSZ, GCA, Point
 from .tariffs import TariffTable
 
 AUCTION = "Capacity auction"  # the guarantee covers the capacity fee only
@@ -42,8 +42,9 @@ class GuaranteeResult:
     gfon_fee: int | None = None
     gfon_fee_guarantee: int | None = None
     surcharge: Fraction = Fraction(0)  # the auction surcharge in %, already included in `fee` and the amounts
-    commodity_fee: int | None = None  # GCA's commodity charge; None for a TSO without one
+    commodity_fee: int | None = None  # GCA's commodity charge or FGSZ's volume fee; None for a TSO without one
     commodity_fee_guarantee: int | None = None
+    vat: int | None = None  # FGSZ's VAT on its guarantee; None for a TSO whose guarantee has none
 
     @property
     def currency(self) -> str:
@@ -51,8 +52,8 @@ class GuaranteeResult:
 
     @property
     def total_guarantee(self) -> int | None:
-        """The sum of the guarantees, None counting as 0; None when none is required."""
-        parts = (self.capacity_fee_guarantee, self.gfon_fee_guarantee, self.commodity_fee_guarantee)
+        """The sum of the guarantees and the VAT, None counting as 0; None when no guarantee is required."""
+        parts = (self.capacity_fee_guarantee, self.gfon_fee_guarantee, self.commodity_fee_guarantee, self.vat)
         if all(part is None for part in parts):
             return None
         return sum(part or 0 for part in parts)
@@ -203,16 +204,60 @@ GCA_NOTE = """**How Gas Connect Austria sets the security deposit** (General Ter
 GCA_DAY_NOTE = ("Gas Connect Austria asks no security deposit for day contracts: they are covered by its one-off "
                 "activation deposit of EUR 100,000, which is not included in the total.")
 
+# FGSZ, GTC 4.d section 7.5 (applicable as of 1 October 2026). The volume fee and k were given by the user and
+# apply on every date; there is no odourisation fee at the interconnection points the tab offers.
+FGSZ_VOLUME_FEE = Fraction("29.22")  # HUF/MWh, at exit points only
+FGSZ_K = Fraction("0.8005")  # the correction multiplier
+FGSZ_VAT = Fraction(27, 100)  # always: the app is for a Hungarian network user
+# The share of the product's capacity fee and of its volume fee that the contractual security covers.
+FGSZ_CAPACITY_SHARE = {GAS_YEAR: Fraction(1, 12), QUARTER: Fraction(1, 3), MONTH: Fraction(1), DAY: Fraction(1)}
+FGSZ_VOLUME_SHARE = {GAS_YEAR: Fraction(2, 12), QUARTER: Fraction(2, 3), MONTH: Fraction(1), DAY: Fraction(1)}
+
+
+def fgsz_guarantee(result: FeeResult, ceghix: Fraction | None = None) -> GuaranteeResult:
+    """FGSZ's contractual security, GTC 4.d 7.5: ((K+A) x share + F x volume share x k) x (1 + VAT), where K+A
+    is the capacity fee with the auction surcharge and F the volume fee on the volume at full use of the capacity
+    (exit points only). Each shown part is rounded to whole forints once, so the row adds up."""
+    days = sum(line.days for line in result.invoice)
+    mwh = result.capacity_kwh_d * days / 1000
+    volume_fee = mwh * FGSZ_VOLUME_FEE if result.point.direction == EXIT else Fraction(0)
+    capacity_part = round_minor(result.total * FGSZ_CAPACITY_SHARE[result.instrument], result.currency)
+    volume_part = round_minor(volume_fee * FGSZ_VOLUME_SHARE[result.instrument] * FGSZ_K, result.currency)
+    vat = round_minor((capacity_part + volume_part) * FGSZ_VAT, result.currency)
+    return GuaranteeResult(result, result.total, capacity_part,
+                           commodity_fee=round_minor(volume_fee, result.currency),
+                           commodity_fee_guarantee=volume_part, vat=vat)
+
+
+FGSZ_NOTE = """**How FGSZ sets the contractual security** (General Terms and Conditions for Network Usage Contracts, GTC 4.d, applicable as of 1 October 2026, chapter 7)
+
+**How much** (7.5). Before the service starts, the network user provides a contractual security for each booking:
+- **Gas year:** ((K + A) × 1/12 + 2 × F × 1/12 × k) × (1 + VAT): one twelfth of the yearly capacity fee and two twelfths of the volume fee.
+- **Quarter:** ((K + A) × 1/3 + 2 × F × 1/3 × k) × (1 + VAT).
+- **Month or day:** (K + A + F × k) × (1 + VAT).
+- K is the capacity fee and A the auction fee (this tab's auction surcharge); F is the volume fee on the volume at full use of the capacity, **29.22 HUF/MWh** at exit points (none at entry points, and no odourisation fee at interconnection points); k, the correction multiplier FGSZ publishes for the gas year, is **80.05%**; VAT is **27%** (a Hungarian network user). This tab uses these values for every date.
+
+**Fixed amounts, not in this tab's totals.** A **minimum guarantee of HUF 10,000,000** for the network usage framework contract (7.2), and, to bid in long-term and quarterly auctions, an **auction security of at least HUF 35,000,000** for the gas year (7.4.1).
+
+**Risk classes** (7.4.1). FGSZ rates each network user as low, medium or high risk. While bidding, it locks the bid times a multiplier: long-term auctions 0.05, 0.0833 and 0.5; quarterly auctions 0.2, 0.33 and 1. A high-risk user also has, as additional security, 5/12 of the annual capacity and auction fee (long-term) or 2/3 of the quarterly fee for the next two quarters locked. None of this is included in this tab.
+
+**When and how long** (7.4, 7.5). The auction security is due by 12:00 on the banking day before the auction. The contractual security must be in effect by the first day of the service period and stay valid at least **60 days after the service period**.
+
+**Forms** (7.1): a bank guarantee from a bank rated at least BB (S&P, or the Moody's or Fitch equivalent), or a cash deposit, on which FGSZ pays no interest. Additional security (7.3), requested case by case, is not covered here.
+"""
+
 # Each supported TSO's guarantee rules in words, shown on tab 3 when the TSO is chosen.
 GUARANTEE_NOTES: dict[str, str] = {
     EUSTREAM: EUSTREAM_NOTE,
     GCA: GCA_NOTE,
+    FGSZ: FGSZ_NOTE,
 }
 
 
 GUARANTEE_RULES: dict[str, Callable[[FeeResult, Fraction | None], GuaranteeResult]] = {
     EUSTREAM: eustream_guarantee,
     GCA: gca_guarantee,
+    FGSZ: fgsz_guarantee,
 }
 
 # TSOs whose guarantee depends on the stage (and, once booked, on the CEGHIX); tab 3 asks for both only for them.
@@ -247,8 +292,6 @@ def calculate_guarantee(
     result = calculate_fee(table, point, instrument, start, end, capacity_text, capacity_unit)
     if isinstance(result, FeeError):
         return result
-    if result.currency != EUR:
-        raise ValueError(f"{point.tso_name} bills in {result.currency}; the guarantee table is in EUR")
     surcharge = parse_surcharge(surcharge_text)
     if isinstance(surcharge, FeeError):
         return surcharge

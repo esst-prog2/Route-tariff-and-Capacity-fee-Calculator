@@ -9,7 +9,7 @@ import pytest
 
 from core import fee, guarantee, points, tariffs
 from core.guarantee import AUCTION, BOOKED, CEGHIX_MESSAGE, calculate_guarantee
-from core.points import ENTRY, EUSTREAM, EXIT, GCA, Point
+from core.points import ENTRY, EUSTREAM, EXIT, FGSZ, GCA, Point
 
 from .helpers import make_row, make_table
 
@@ -108,8 +108,9 @@ def test_gfon_rounds_half_up_to_cents():
     assert result.gfon_fee == 77
 
 
-def test_eustream_then_gca_have_a_rule_and_only_eustream_is_staged():
-    assert list(guarantee.GUARANTEE_RULES) == [EUSTREAM, GCA]
+def test_eustream_gca_and_fgsz_have_a_rule_and_only_eustream_is_staged():
+    assert list(guarantee.GUARANTEE_RULES) == [EUSTREAM, GCA, FGSZ]
+    assert list(guarantee.GUARANTEE_NOTES) == [EUSTREAM, GCA, FGSZ]
     assert guarantee.STAGED_TSOS == {EUSTREAM}
 
 
@@ -287,6 +288,104 @@ def test_mosonmagyarovar_gca_figures_of_the_spec(real):
     start, end = fee.resolve_period(fee.QUARTER, year=2027, quarter=1)
     oberkappel = calculate_guarantee(table, entry, fee.QUARTER, start, end, "120000", "kWh/h", None)
     assert (oberkappel.commodity_fee, oberkappel.commodity_fee_guarantee) == (2051309, 1344747)
+
+
+# --- FGSZ rule on hand-made rows (GTC 4.d 7.5) -------------------------------------------------
+
+FGSZ_EIC = "21Z000000000236Q"
+FGSZ_EXIT = Point(FGSZ, "Test point", "HU>RO", FGSZ_EIC, EXIT)
+FGSZ_ENTRY = Point(FGSZ, "Test point", "RO>HU", FGSZ_EIC, ENTRY)
+FGSZ_TABLE = make_table(  # Year 1000, quarters 300, months 100, days 4 HUF per kWh/h, both directions
+    make_row(eic=FGSZ_EIC, direction="Exit", operator=FGSZ, valid_to=None),
+    make_row(eic=FGSZ_EIC, direction="Entry", operator=FGSZ, valid_to=None),
+)
+
+
+def fgsz_for(point, instrument, capacity, unit="kWh/h", surcharge=None, **selection):
+    start, end = fee.resolve_period(instrument, **selection)
+    return calculate_guarantee(FGSZ_TABLE, point, instrument, start, end, capacity, unit, None, None, surcharge)
+
+
+def fgsz_amounts(r):
+    return r.capacity_fee, r.commodity_fee, r.capacity_fee_guarantee, r.commodity_fee_guarantee, r.vat, r.total_guarantee
+
+
+def test_fgsz_quarter_at_an_exit_point():
+    # K = 10 kWh/h x 300 = 3,000 HUF -> 1/3 = 1,000. F = 0.24 MWh x 92 days = 22.08 MWh x 29.22 = 645.1776 -> 645;
+    # 2/3 x 645.1776 x 0.8005 = 344.31 -> 344. VAT 27% of 1,344 = 362.88 -> 363. Total 1,707.
+    result = fgsz_for(FGSZ_EXIT, fee.QUARTER, "10", year=2026, quarter=4)
+    assert result.currency == "HUF"
+    assert fgsz_amounts(result) == (3000, 645, 1000, 344, 363, 1707)
+    assert (result.gfon_fee, result.gfon_fee_guarantee) == (None, None)
+
+
+def test_fgsz_gas_year_takes_exact_twelfths():
+    # K = 10,000 -> 1/12 = 833.33 -> 833. F = 87.6 MWh x 29.22 = 2,559.672; 2/12 x F x 0.8005 = 341.50 -> 342.
+    # VAT 27% of 1,175 = 317.25 -> 317. Total 1,492.
+    result = fgsz_for(FGSZ_EXIT, fee.GAS_YEAR, "10", gas_year=2026)
+    assert fgsz_amounts(result) == (10000, 2560, 833, 342, 317, 1492)
+
+
+def test_fgsz_month_and_day_take_the_whole_fee():
+    # Month: 240 kWh/d = 10 kWh/h x 100 = 1,000; F = 0.24 x 28 = 6.72 MWh x 29.22 = 196.36; x 0.8005 = 157.18 -> 157.
+    month = fgsz_for(FGSZ_EXIT, fee.MONTH, "240", "kWh/d", year=2027, month=2)
+    assert fgsz_amounts(month) == (1000, 196, 1000, 157, 312, 1469)
+    # Day: 10 kWh/h x 4 = 40; F = 0.24 x 29.22 = 7.01; x 0.8005 = 5.61 -> 6; VAT 27% of 46 = 12.42 -> 12.
+    day = fgsz_for(FGSZ_EXIT, fee.DAY, "10", day=date(2026, 12, 5))
+    assert fgsz_amounts(day) == (40, 7, 40, 6, 12, 58)
+
+
+def test_fgsz_entry_point_has_no_volume_fee():
+    result = fgsz_for(FGSZ_ENTRY, fee.QUARTER, "10", year=2026, quarter=4)
+    assert fgsz_amounts(result) == (3000, 0, 1000, 0, 270, 1270)
+
+
+def test_fgsz_surcharge_raises_the_capacity_part_not_the_volume_fee():
+    # 3,000 + 10% = 3,300 -> 1/3 = 1,100; the volume part stays 344; VAT 27% of 1,444 = 389.88 -> 390.
+    result = fgsz_for(FGSZ_EXIT, fee.QUARTER, "10", surcharge="10", year=2026, quarter=4)
+    assert fgsz_amounts(result) == (3300, 645, 1100, 344, 390, 1834)
+
+
+def test_fgsz_rounds_each_part_half_away_from_zero():
+    # 3 kWh/h quarter: K = 900 -> 300; F = 6.624 MWh x 29.22 = 193.553; 2/3 x F x 0.8005 = 103.29 -> 103;
+    # VAT 27% of 403 = 108.81 -> 109. A day at 25 kWh/h: K = 100; F = 0.6 MWh x 29.22 = 17.532 -> 18;
+    # x 0.8005 = 14.03 -> 14; VAT 27% of 114 = 30.78 -> 31; total 145.
+    assert fgsz_amounts(fgsz_for(FGSZ_EXIT, fee.QUARTER, "3", year=2026, quarter=4)) == (900, 194, 300, 103, 109, 512)
+    assert fgsz_amounts(fgsz_for(FGSZ_EXIT, fee.DAY, "25", day=date(2026, 12, 5))) == (100, 18, 100, 14, 31, 145)
+
+
+def test_fgsz_note_covers_the_rule():
+    note = guarantee.GUARANTEE_NOTES[FGSZ]
+    for text in ("1/12", "1/3", "29.22 HUF/MWh", "80.05%", "27%", "HUF 10,000,000", "HUF 35,000,000",
+                 "60 days after the service period", "0.0833", "5/12", "BB", "7.3"):
+        assert text in note
+
+
+def test_fgsz_figures_of_the_spec(real):
+    table, _ = real
+    catalog = points.build_catalog(table)
+
+    def fgsz(name, flow, instrument, capacity, unit="kWh/h", surcharge=None, **selection):
+        point = next(p for p in catalog.singles_of(FGSZ) if p.name == name and p.flow == flow)
+        start, end = fee.resolve_period(instrument, **selection)
+        return fgsz_amounts(calculate_guarantee(table, point, instrument, start, end, capacity, unit, None, None,
+                                                surcharge))
+
+    assert len(catalog.singles_of(FGSZ)) == 14
+    assert fgsz("Csanádpalota", "HU>RO", fee.QUARTER, "100000", year=2026, quarter=4) == \
+        (43362631, 6451776, 14454210, 3443098, 4832273, 22729581)
+    assert fgsz("Csanádpalota", "HU>RO", fee.GAS_YEAR, "100000", gas_year=2026) == \
+        (132648000, 25596720, 11054000, 3415029, 3906638, 18375667)
+    assert fgsz("Csanádpalota", "HU>RO", fee.GAS_YEAR, "100000", gas_year=2025) == \
+        (132727000, 25596720, 11060583, 3415029, 3908415, 18384027)
+    assert fgsz("Csanádpalota", "HU>RO", fee.MONTH, "2400000", "kWh/d", year=2027, month=1) == \
+        (19074782, 2173968, 19074782, 1740261, 5620062, 26435105)
+    assert fgsz("Csanádpalota", "HU>RO", fee.DAY, "100000", day=date(2026, 12, 5)) == \
+        (1047919, 70128, 1047919, 56137, 298095, 1402151)
+    assert fgsz("Mosonmagyaróvár", "AT>HU", fee.QUARTER, "100000", year=2026, quarter=4) == \
+        (37562771, 0, 12520924, 0, 3380649, 15901573)
+    assert fgsz("Csanádpalota", "HU>RO", fee.QUARTER, "100000", surcharge="10", year=2026, quarter=4) == \
+        (47698894, 6451776, 15899631, 3443098, 5222537, 24565266)
 
 
 # --- Auction surcharge -----------------------------------------------------------------------

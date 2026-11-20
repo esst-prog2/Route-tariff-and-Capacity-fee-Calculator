@@ -93,6 +93,7 @@ def format_whole(amount: int) -> str:
 
 
 EUR = "EUR"
+HUF = "HUF"
 
 # Amounts are rounded and split in the currency's smallest shown unit: whole forints, else cents.
 CURRENCY_DECIMALS = {"HUF": 0, "EUR": 2, "RON": 2, "CZK": 2, "PLN": 2}

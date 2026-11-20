@@ -472,13 +472,15 @@ DASH = "–"
 GUARANTEE_AMOUNTS = {
     "Capacity fee": "capacity_fee",
     "GfON fee": "gfon_fee",
-    "Commodity fee": "commodity_fee",
+    "Commodity / volume fee": "commodity_fee",
     "Capacity fee guarantee": "capacity_fee_guarantee",
     "GfON fee guarantee": "gfon_fee_guarantee",
-    "Commodity fee guarantee": "commodity_fee_guarantee",
+    "Commodity / volume fee guarantee": "commodity_fee_guarantee",
+    "VAT": "vat",
     "Total guarantee": "total_guarantee",
 }
 GUARANTEE_COLUMNS = tuple(GUARANTEE_AMOUNTS)
+GUARANTEE_CURRENCIES = (money.EUR, money.HUF)  # the order of the total rows; another currency would follow
 
 
 def product_label(instrument: str, selection: dict) -> str:
@@ -515,7 +517,7 @@ def surcharge_text(text) -> str:
 
 
 def guarantee_record(booking: dict, result) -> dict:
-    """One table row: the booking's inputs, then its amounts in EUR (blank when it cannot be priced)."""
+    """One table row: the booking's inputs, then its amounts in its TSO's currency (blank when it cannot be priced)."""
     point = booking["point"]
     booked = booking["stage"] == guarantee.BOOKED
     record = {
@@ -528,17 +530,39 @@ def guarantee_record(booking: dict, result) -> dict:
         "CEGHIX (EUR/MWh)": number_text(guarantee.parse_ceghix(booking["ceghix"])) if booked else DASH,
     }
     if isinstance(result, fee.FeeError):
-        return record | dict.fromkeys(GUARANTEE_COLUMNS, "")
+        return record | {"Currency": ""} | dict.fromkeys(GUARANTEE_COLUMNS, "")
     amounts = {column: getattr(result, field) for column, field in GUARANTEE_AMOUNTS.items()}
-    return record | {column: DASH if amount is None else money.format_amount(amount, money.EUR)
-                     for column, amount in amounts.items()}
+    return record | {"Currency": result.currency} | {
+        column: DASH if amount is None else money.format_amount(amount, result.currency)
+        for column, amount in amounts.items()}
 
 
-def guarantee_total(results) -> dict:
-    """The total row: the sum of each amount column over the priced rows, a dash counting as zero."""
+def guarantee_sums(results) -> dict[str, dict[str, int]]:
+    """Each currency of the priced rows (EUR first, then HUF) -> each amount column's sum in its minor units,
+    a dash counting as zero."""
     priced = [r for r in results if not isinstance(r, fee.FeeError)]
-    return {"": "Total"} | {column: money.format_amount(sum(getattr(r, field) or 0 for r in priced), money.EUR)
-                            for column, field in GUARANTEE_AMOUNTS.items()}
+    present = {r.currency for r in priced}
+    order = [c for c in GUARANTEE_CURRENCIES if c in present] + sorted(present - set(GUARANTEE_CURRENCIES))
+    return {currency: {column: sum(getattr(r, field) or 0 for r in priced if r.currency == currency)
+                       for column, field in GUARANTEE_AMOUNTS.items()}
+            for currency in order}
+
+
+def guarantee_totals(sums: dict[str, dict[str, int]], huf_rate: Fraction | None = None) -> list[dict]:
+    """The total rows: one "Total" row per currency, then, with a HUF per EUR rate, the EUR and HUF totals
+    together in EUR (each column exact, rounded to cents once)."""
+    rows = [{"": "Total", "Currency": currency} | {column: money.format_amount(amount, currency)
+                                                   for column, amount in columns.items()}
+            for currency, columns in sums.items()]
+    if huf_rate is not None:
+        def in_eur(column: str) -> int:
+            eur = Fraction(sums.get(money.EUR, {}).get(column, 0), 100)
+            huf = Fraction(sums.get(money.HUF, {}).get(column, 0)) / huf_rate
+            return money.round_minor(eur + huf, money.EUR)
+
+        rows.append({"": f"All in EUR (1 EUR = {number_text(huf_rate)} HUF)", "Currency": money.EUR}
+                    | {column: money.format_amount(in_eur(column), money.EUR) for column in GUARANTEE_COLUMNS})
+    return rows
 
 
 def guarantee_tab(table, catalog: points.Catalog) -> None:
@@ -586,8 +610,18 @@ def guarantee_tab(table, catalog: points.Catalog) -> None:
                        f"{product_label(booking['instrument'], booking['selection'])}: {result.message}")
     event = st.dataframe(pd.DataFrame([guarantee_record(b, r) for b, r in zip(rows, results)]), hide_index=True,
                          on_select="rerun", selection_mode="multi-row", key="guar_table")
-    st.dataframe(pd.DataFrame([guarantee_total(results)]), hide_index=True)
-    st.caption("Amounts in EUR.")
+    totals_slot = st.empty()  # the total table, filled once the HUF rate box below has been read
+    st.caption("Amounts in each row's currency: EUR with cents, HUF in whole forints.")
+    sums = guarantee_sums(results)
+    huf_rate = None
+    if money.HUF in sums:
+        rate, message = money.parse_fx_rate(
+            st.text_input("HUF per 1 EUR", value="", placeholder="e.g. 400", key="guar_rate_HUF",
+                          help="Type a rate to see the whole list in EUR."), money.HUF)
+        if message:
+            st.warning(message)
+        huf_rate = rate
+    totals_slot.dataframe(pd.DataFrame(guarantee_totals(sums, huf_rate)), hide_index=True)
     if any(guarantee.is_gca_day(b["point"], b["instrument"])
            for b, r in zip(rows, results) if not isinstance(r, fee.FeeError)):
         st.caption(guarantee.GCA_DAY_NOTE)

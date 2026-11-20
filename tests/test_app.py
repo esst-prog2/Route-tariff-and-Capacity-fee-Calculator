@@ -608,11 +608,11 @@ def select_rows(at, rows):
 
 def test_tab3_offers_eustream_and_shows_the_ceghix_box_only_for_booked_capacity(real_app):
     at = real_app
-    assert at.selectbox(key="guar_tso").options == ["Eustream", "Gas Connect Austria"]
+    assert at.selectbox(key="guar_tso").options == ["Eustream", "Gas Connect Austria", "FGSZ"]
     assert at.selectbox(key="guar_tso").value == "EUSTR"
     eustream_points = at.selectbox(key="guar_point_EUSTR").options
     assert "Balassagyarmat SK>HU (21Z000000000358C)" in eustream_points
-    assert not any(o.startswith(MOSONMAGYAROVAR_EXIT) for o in eustream_points)
+    assert not any(o.startswith(MOSONMAGYAROVAR_EXIT) or o.startswith("Csanádpalota") for o in eustream_points)
     assert at.radio(key="guar_stage").options == ["Capacity auction", "Booked capacity"]
     assert at.radio(key="guar_stage").value == "Booked capacity"
     assert at.text_input(key="guar_ceghix").value == ""
@@ -640,20 +640,21 @@ def test_tab3_list_of_the_spec_bookings_and_its_total(real_app):
     add_booking(at, instrument="day", stage="Capacity auction", day=date(2026, 12, 5))
     table, total = guarantee_tables(at)
     assert list(table.columns) == [
-        "TSO", "Network point", "Product", "Capacity", "Stage", "Surcharge (%)", "CEGHIX (EUR/MWh)",
-        "Capacity fee", "GfON fee", "Commodity fee",
-        "Capacity fee guarantee", "GfON fee guarantee", "Commodity fee guarantee", "Total guarantee",
+        "TSO", "Network point", "Product", "Capacity", "Stage", "Surcharge (%)", "CEGHIX (EUR/MWh)", "Currency",
+        "Capacity fee", "GfON fee", "Commodity / volume fee",
+        "Capacity fee guarantee", "GfON fee guarantee", "Commodity / volume fee guarantee", "VAT", "Total guarantee",
     ]
     assert table.values.tolist() == [
-        ["Eustream", BALASSAGYARMAT_EXIT, "Quarter 2026 Q4", "100,000 kWh/h", "Booked capacity", "–", "30",
-         "361,344.00", "58,180.80", "–", "240,896.00", "39,208.80", "–", "280,104.80"],
-        ["Eustream", BALASSAGYARMAT_EXIT, "Month 2027-01", "2,400,000 kWh/d", "Booked capacity", "–", "30",
-         "120,456.00", "19,604.40", "–", "120,456.00", "19,604.40", "–", "140,060.40"],
-        ["Eustream", BALASSAGYARMAT_EXIT, "Day 2026-12-05", "100,000 kWh/h", "Capacity auction", "–", "–",
-         "7,896.00", "–", "–", "7,896.00", "–", "–", "7,896.00"],
+        ["Eustream", BALASSAGYARMAT_EXIT, "Quarter 2026 Q4", "100,000 kWh/h", "Booked capacity", "–", "30", "EUR",
+         "361,344.00", "58,180.80", "–", "240,896.00", "39,208.80", "–", "–", "280,104.80"],
+        ["Eustream", BALASSAGYARMAT_EXIT, "Month 2027-01", "2,400,000 kWh/d", "Booked capacity", "–", "30", "EUR",
+         "120,456.00", "19,604.40", "–", "120,456.00", "19,604.40", "–", "–", "140,060.40"],
+        ["Eustream", BALASSAGYARMAT_EXIT, "Day 2026-12-05", "100,000 kWh/h", "Capacity auction", "–", "–", "EUR",
+         "7,896.00", "–", "–", "7,896.00", "–", "–", "–", "7,896.00"],
     ]
-    assert total.values.tolist() == [["Total", "489,696.00", "77,785.20", "0.00", "369,248.00", "58,813.20", "0.00",
-                                      "428,061.20"]]
+    assert total.values.tolist() == [["Total", "EUR", "489,696.00", "77,785.20", "0.00", "369,248.00", "58,813.20",
+                                      "0.00", "0.00", "428,061.20"]]
+    assert "guar_rate_HUF" not in {t.key for t in at.text_input}  # no HUF row, no rate box
 
 
 def test_tab3_surcharge_raises_the_capacity_fee_and_its_guarantee(real_app):
@@ -664,11 +665,12 @@ def test_tab3_surcharge_raises_the_capacity_fee_and_its_guarantee(real_app):
     add_booking(at, instrument="day", stage="Capacity auction", day=date(2026, 12, 5), surcharge="2,5")
     table, total = guarantee_tables(at)
     assert table.iloc[:, 4:].values.tolist() == [
-        ["Booked capacity", "10", "30", "397,478.40", "58,180.80", "–", "264,985.60", "39,208.80", "–", "304,194.40"],
-        ["Capacity auction", "2.5", "–", "8,093.40", "–", "–", "8,093.40", "–", "–", "8,093.40"],
+        ["Booked capacity", "10", "30", "EUR", "397,478.40", "58,180.80", "–", "264,985.60", "39,208.80", "–", "–",
+         "304,194.40"],
+        ["Capacity auction", "2.5", "–", "EUR", "8,093.40", "–", "–", "8,093.40", "–", "–", "–", "8,093.40"],
     ]
-    assert total.values.tolist() == [["Total", "405,571.80", "58,180.80", "0.00", "273,079.00", "39,208.80", "0.00",
-                                      "312,287.80"]]
+    assert total.values.tolist() == [["Total", "EUR", "405,571.80", "58,180.80", "0.00", "273,079.00", "39,208.80",
+                                      "0.00", "0.00", "312,287.80"]]
 
 
 def test_tab3_refuses_a_negative_surcharge(real_app):
@@ -683,8 +685,8 @@ def test_tab3_gas_year_row(real_app):
     add_booking(at, instrument="gas_year", capacity="10000", ceghix="40", gas_year=2025)
     table, _ = guarantee_tables(at)
     assert table.iloc[0, 2:].tolist() == [
-        "Gas year 2025/26", "10,000 kWh/h", "Booked capacity", "–", "40", "91,250.00", "30,528.60", "–", "16,060.00",
-        "5,185.68", "–", "21,245.68",
+        "Gas year 2025/26", "10,000 kWh/h", "Booked capacity", "–", "40", "EUR", "91,250.00", "30,528.60", "–",
+        "16,060.00", "5,185.68", "–", "–", "21,245.68",
     ]
 
 
@@ -734,13 +736,14 @@ def test_tab3_list_with_both_tsos_and_the_gca_day_note(real_app):
                 day=date(2026, 12, 5))
     table, total = guarantee_tables(at)
     assert table.values.tolist()[1:] == [
-        ["Gas Connect Austria", MOSONMAGYAROVAR_EXIT, "Quarter 2026 Q4", "120,000 kWh/h", "–", "–", "–",
-         "150,096.00", "–", "31,697.16", "100,064.00", "–", "21,016.60", "121,080.60"],
-        ["Gas Connect Austria", MOSONMAGYAROVAR_EXIT, "Day 2026-12-05", "120,000 kWh/h", "–", "–", "–",
-         "2,616.00", "–", "344.53", "–", "–", "–", "–"],
+        ["Gas Connect Austria", MOSONMAGYAROVAR_EXIT, "Quarter 2026 Q4", "120,000 kWh/h", "–", "–", "–", "EUR",
+         "150,096.00", "–", "31,697.16", "100,064.00", "–", "21,016.60", "–", "121,080.60"],
+        ["Gas Connect Austria", MOSONMAGYAROVAR_EXIT, "Day 2026-12-05", "120,000 kWh/h", "–", "–", "–", "EUR",
+         "2,616.00", "–", "344.53", "–", "–", "–", "–", "–"],
     ]
-    assert total.values.tolist() == [["Total", "514,056.00", "58,180.80", "32,041.69", "340,960.00", "39,208.80",
-                                      "21,016.60", "401,185.40"]]
+    assert total.values.tolist() == [["Total", "EUR", "514,056.00", "58,180.80", "32,041.69", "340,960.00", "39,208.80",
+                                      "21,016.60", "0.00", "401,185.40"]]
+    assert "guar_rate_HUF" not in {t.key for t in at.text_input}
     assert any(c.value == GCA_DAY_NOTE for c in at.caption)
 
 
@@ -752,9 +755,56 @@ def test_tab3_gca_gas_year_and_surcharge(real_app):
                 q_year=2026, quarter=4)
     table, _ = guarantee_tables(at)
     assert table.iloc[:, 5:].values.tolist() == [
-        ["–", "–", "421,500.00", "–", "94,057.89", "64,200.00", "–", "0.00", "64,200.00"],
-        ["10", "–", "165,105.60", "–", "31,697.16", "110,070.40", "–", "21,016.60", "131,087.00"],
+        ["–", "–", "EUR", "421,500.00", "–", "94,057.89", "64,200.00", "–", "0.00", "–", "64,200.00"],
+        ["10", "–", "EUR", "165,105.60", "–", "31,697.16", "110,070.40", "–", "21,016.60", "–", "131,087.00"],
     ]
+
+
+CSANADPALOTA_EXIT = "Csanádpalota HU>RO"
+
+
+def test_tab3_fgsz_inputs_and_description(real_app):
+    at = real_app
+    at.selectbox(key="guar_tso").select("FGSZ").run()
+    options = at.selectbox(key="guar_point_FGSZ").options
+    assert len(options) == 14
+    assert "Csanádpalota HU>RO (21Z000000000236Q)" in options and "Mosonmagyaróvár AT>HU (21Z000000000003C)" in options
+    assert "guar_stage" not in {r.key for r in at.radio}
+    assert "guar_ceghix" not in {t.key for t in at.text_input}
+    assert not any("VAT" in (t.label or "") for t in at.text_input)
+    assert at.text_input(key="guar_surcharge").value == ""
+    expander = next(e for e in at.expander if e.label == "How FGSZ calculates the financial guarantee")
+    text = " ".join(m.value for m in expander.markdown)
+    for phrase in ("1/12", "1/3", "29.22 HUF/MWh", "80.05%", "27%", "HUF 10,000,000", "HUF 35,000,000",
+                   "60 days after the service period"):
+        assert phrase in text
+
+
+def test_tab3_fgsz_row_eur_and_huf_totals_and_the_combined_eur_total(real_app):
+    at = real_app
+    add_booking(at, q_year=2026, quarter=4)  # Eustream, 280,104.80 EUR
+    add_booking(at, tso="FGSZ", point_label=CSANADPALOTA_EXIT, q_year=2026, quarter=4)
+    table, total = guarantee_tables(at)
+    assert table.values.tolist()[1] == [
+        "FGSZ", CSANADPALOTA_EXIT, "Quarter 2026 Q4", "100,000 kWh/h", "–", "–", "–", "HUF",
+        "43,362,631", "–", "6,451,776", "14,454,210", "–", "3,443,098", "4,832,273", "22,729,581",
+    ]
+    assert total.values.tolist() == [
+        ["Total", "EUR", "361,344.00", "58,180.80", "0.00", "240,896.00", "39,208.80", "0.00", "0.00", "280,104.80"],
+        ["Total", "HUF", "43,362,631", "0", "6,451,776", "14,454,210", "0", "3,443,098", "4,832,273", "22,729,581"],
+    ]
+    assert at.text_input(key="guar_rate_HUF").value == ""
+
+    at.text_input(key="guar_rate_HUF").set_value("400").run()
+    _, total = guarantee_tables(at)
+    combined = total.values.tolist()[-1]
+    assert combined[:2] == ["All in EUR (1 EUR = 400 HUF)", "EUR"]
+    assert combined[-1] == "336,928.75"  # 280,104.80 + 22,729,581 / 400
+
+    at.text_input(key="guar_rate_HUF").set_value("abc").run()
+    _, total = guarantee_tables(at)
+    assert len(total) == 2
+    assert any(w.value == "The HUF per EUR rate must be a positive number." for w in at.warning)
 
 
 def test_tab3_remove_selected_rows_and_clear(real_app):
