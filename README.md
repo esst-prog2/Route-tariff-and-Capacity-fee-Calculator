@@ -74,17 +74,19 @@ The build uses the app's own tariff loading, point catalog and rules, and stops 
 A change to a tab 2 fee rule must also be made in the workbook (`core/workbook.py`) and in the `excel-fee-workbook` spec; the Excel check fails until both agree.
 
 ## The Bank Guarantee Calculator (tab 3)
-Tab 3 works out the financial guarantee (in practice a bank guarantee) a TSO asks for, for a list of bookings. So far it knows Eustream's rule, from section 7.6.2 of the Eustream Operational Order (24 July 2025).
+Tab 3 works out the financial guarantee (in practice a bank guarantee) a TSO asks for, for a list of bookings. It knows two rules: Eustream's, from section 7.6.2 of the Eustream Operational Order (24 July 2025), and Gas Connect Austria's security deposit, from chapter IV of its General Terms and Conditions for Transmission Network Access (version of 23 September 2013).
 
 **Inputs.** For each booking you choose:
-- a TSO (only Eustream for now) and one of its network points;
+- a TSO (Eustream or Gas Connect Austria) and one of its network points;
 - a product and period, and a capacity in kWh/h or kWh/d, as on tab 2;
-- a stage: **Capacity auction** or **Booked capacity**;
+- for Eustream only, a stage: **Capacity auction** or **Booked capacity**;
 - an optional **auction surcharge** in % (the premium paid when demand is high; blank means none).
 
-At an auction the guarantee covers only the capacity fee. Once the capacity is booked, it also covers the GfON (Eustream's neutrality fee). A booked capacity needs the CEGHIX in EUR/MWh: the value valid on the day before the booking. You type it in, because the app has no index feed.
+**Eustream.** At an auction the guarantee covers only the capacity fee. Once the capacity is booked, it also covers the GfON (Eustream's neutrality fee). A booked capacity needs the CEGHIX in EUR/MWh: the value valid on the day before the booking. You type it in, because the app has no index feed.
 
 The closed section "How Eustream calculates the financial guarantee", under the TSO box, sums up Eustream's rule from its Operational Order (valid from 24 July 2025, sections 3.3.1, 4.2.12 and 7.6): how much for each product, when the guarantee is due, that a bank guarantee must run until at least two months after the contract ends and be topped up within 3 calendar days after a draw, and the accepted forms (bank guarantee, pre-payment, cash collateral).
+
+**Gas Connect Austria.** The security deposit is the fee of the first months of the service, taken from the monthly invoice: the whole fee for a month, the first two months for a quarter, the first three for a gas year. So for gas year 2025/26 at Mosonmagyaróvár AT>HU, 120,000 kWh/h, it is 64,200.00 EUR (October to December at the 2025 tariff), not the dearest months. The guarantee also covers GCA's commodity charge for the same months: the volume at full use of the capacity (kWh/h × 24 × days / 1000 MWh) times the rate, 0.03322 EUR/MWh at entry and 0.11963 at exit from 1 January 2026, 0.07914 and 0.2586 from 1 January 2027, and 0 before 2026 (no rate is known). For example, 150,000 kWh/h at an exit point in December 2026 is 111,600 MWh, a commodity charge of 13,350.71 EUR. The table shows it in the "Commodity fee" and "Commodity fee guarantee" columns. GCA has no neutrality fee and the stage does not change the amount, so the tab does not ask for a stage or a CEGHIX. A day contract needs no security deposit: GCA's one-off activation deposit of EUR 100,000 covers it. Its guarantee shows "–", and a note under the table says so; the activation deposit itself is not added to the total. The closed section "How Gas Connect Austria calculates the financial guarantee" sums up chapter IV: how much, the activation deposit, the deadline (5 working days after the contract is concluded), when it is returned, what happens if it is missed, and the forms (bank guarantee or cash deposit). The German text of the GTC is the binding one.
 
 **The list.** "Add to list" adds the booking as a row. Rows can be selected and removed, or the list cleared, and the list lasts for the browser session. For each row the table shows the capacity fee, GfON fee, capacity fee guarantee, GfON fee guarantee and total guarantee in EUR, with a total row underneath.
 

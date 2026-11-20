@@ -468,7 +468,17 @@ def fee_tab(table, catalog: points.Catalog) -> None:
 
 GUARANTEE_ROWS = "guar_rows"  # the list of bookings, kept for the browser session
 DASH = "–"
-GUARANTEE_COLUMNS = ("Capacity fee", "GfON fee", "Capacity fee guarantee", "GfON fee guarantee", "Total guarantee")
+# The amount columns of the guarantee table and the `GuaranteeResult` field each one shows.
+GUARANTEE_AMOUNTS = {
+    "Capacity fee": "capacity_fee",
+    "GfON fee": "gfon_fee",
+    "Commodity fee": "commodity_fee",
+    "Capacity fee guarantee": "capacity_fee_guarantee",
+    "GfON fee guarantee": "gfon_fee_guarantee",
+    "Commodity fee guarantee": "commodity_fee_guarantee",
+    "Total guarantee": "total_guarantee",
+}
+GUARANTEE_COLUMNS = tuple(GUARANTEE_AMOUNTS)
 
 
 def product_label(instrument: str, selection: dict) -> str:
@@ -513,29 +523,22 @@ def guarantee_record(booking: dict, result) -> dict:
         "Network point": f"{point.name} {point.flow}",
         "Product": product_label(booking["instrument"], booking["selection"]),
         "Capacity": f"{number_text(money.parse_number(booking['capacity']))} {booking['unit']}",
-        "Stage": booking["stage"],
+        "Stage": booking["stage"] or DASH,
         "Surcharge (%)": surcharge_text(booking.get("surcharge")),
         "CEGHIX (EUR/MWh)": number_text(guarantee.parse_ceghix(booking["ceghix"])) if booked else DASH,
     }
     if isinstance(result, fee.FeeError):
         return record | dict.fromkeys(GUARANTEE_COLUMNS, "")
-    amounts = (result.capacity_fee, result.gfon_fee, result.capacity_fee_guarantee, result.gfon_fee_guarantee,
-               result.total_guarantee)
+    amounts = {column: getattr(result, field) for column, field in GUARANTEE_AMOUNTS.items()}
     return record | {column: DASH if amount is None else money.format_amount(amount, money.EUR)
-                     for column, amount in zip(GUARANTEE_COLUMNS, amounts)}
+                     for column, amount in amounts.items()}
 
 
 def guarantee_total(results) -> dict:
     """The total row: the sum of each amount column over the priced rows, a dash counting as zero."""
     priced = [r for r in results if not isinstance(r, fee.FeeError)]
-    sums = (
-        sum(r.capacity_fee for r in priced),
-        sum(r.gfon_fee or 0 for r in priced),
-        sum(r.capacity_fee_guarantee for r in priced),
-        sum(r.gfon_fee_guarantee or 0 for r in priced),
-        sum(r.total_guarantee for r in priced),
-    )
-    return {"": "Total"} | {column: money.format_amount(amount, money.EUR) for column, amount in zip(GUARANTEE_COLUMNS, sums)}
+    return {"": "Total"} | {column: money.format_amount(sum(getattr(r, field) or 0 for r in priced), money.EUR)
+                            for column, field in GUARANTEE_AMOUNTS.items()}
 
 
 def guarantee_tab(table, catalog: points.Catalog) -> None:
@@ -552,8 +555,10 @@ def guarantee_tab(table, catalog: points.Catalog) -> None:
                          key=f"guar_point_{tso}")
     instrument, selection = choose_product(table, point, today, "guar")
     capacity, capacity_unit = choose_capacity("guar")
-    stage = st.radio("Stage", guarantee.STAGES, index=guarantee.STAGES.index(guarantee.BOOKED), horizontal=True,
-                     key="guar_stage")
+    stage = None  # only TSOs whose guarantee depends on it ask for the stage (and the CEGHIX)
+    if tso in guarantee.STAGED_TSOS:
+        stage = st.radio("Stage", guarantee.STAGES, index=guarantee.STAGES.index(guarantee.BOOKED), horizontal=True,
+                         key="guar_stage")
     surcharge = st.text_input("Auction surcharge (%)", value="", placeholder="e.g. 15", key="guar_surcharge")
     st.caption(guarantee.SURCHARGE_NOTE)
     ceghix = None
@@ -583,6 +588,9 @@ def guarantee_tab(table, catalog: points.Catalog) -> None:
                          on_select="rerun", selection_mode="multi-row", key="guar_table")
     st.dataframe(pd.DataFrame([guarantee_total(results)]), hide_index=True)
     st.caption("Amounts in EUR.")
+    if any(guarantee.is_gca_day(b["point"], b["instrument"])
+           for b, r in zip(rows, results) if not isinstance(r, fee.FeeError)):
+        st.caption(guarantee.GCA_DAY_NOTE)
 
     left, right = st.columns(2)
     if left.button("Remove selected rows", key="guar_remove", disabled=not event.selection.rows):

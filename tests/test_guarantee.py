@@ -9,7 +9,7 @@ import pytest
 
 from core import fee, guarantee, points, tariffs
 from core.guarantee import AUCTION, BOOKED, CEGHIX_MESSAGE, calculate_guarantee
-from core.points import EUSTREAM, EXIT, Point
+from core.points import ENTRY, EUSTREAM, EXIT, GCA, Point
 
 from .helpers import make_row, make_table
 
@@ -108,8 +108,103 @@ def test_gfon_rounds_half_up_to_cents():
     assert result.gfon_fee == 77
 
 
-def test_only_eustream_has_a_rule():
-    assert list(guarantee.GUARANTEE_RULES) == [EUSTREAM]
+def test_eustream_then_gca_have_a_rule_and_only_eustream_is_staged():
+    assert list(guarantee.GUARANTEE_RULES) == [EUSTREAM, GCA]
+    assert guarantee.STAGED_TSOS == {EUSTREAM}
+
+
+def test_eustream_still_needs_a_stage():
+    start, end = fee.resolve_period(fee.MONTH, year=2026, month=2)
+    with pytest.raises(ValueError):
+        calculate_guarantee(TABLE, POINT, fee.MONTH, start, end, "10", "kWh/h", None)
+
+
+# --- Gas Connect Austria rule on hand-made rows (GTC IV para. 15) -----------------------------
+
+GCA_EIC = "21Z000000000003C"
+GCA_POINT = Point(GCA, "Test point", "AT>HU", GCA_EIC, EXIT)
+
+
+def gca_row(valid_from, valid_to=None, prices=None):
+    return make_row(eic=GCA_EIC, direction="Exit", valid_from=valid_from, valid_to=valid_to, operator=GCA,
+                    currency="EUR", unit="kWh/h", prices=prices)
+
+
+GCA_TABLE = make_table(gca_row("2025-10-01"))  # Year 1000, quarters 300, months 100, days 4 EUR per kWh/h
+
+
+def gca_for(table, instrument, capacity, unit, surcharge=None, stage=None, ceghix=None, **selection):
+    start, end = fee.resolve_period(instrument, **selection)
+    return calculate_guarantee(table, GCA_POINT, instrument, start, end, capacity, unit, stage, ceghix, surcharge)
+
+
+def test_gca_quarter_takes_the_first_two_months():
+    # 10 kWh/h x 300 = 3,000.00, invoiced 1,000.00 a month; no GfON. Commodity at the exit rate 0.11963:
+    # 0.24 MWh a day x 92 days = 22.08 MWh -> 2.64; October and November, 61 days = 14.64 MWh -> 1.75.
+    result = gca_for(GCA_TABLE, fee.QUARTER, "10", "kWh/h", year=2026, quarter=4)
+    assert (result.capacity_fee, result.capacity_fee_guarantee) == (300000, 200000)
+    assert (result.commodity_fee, result.commodity_fee_guarantee) == (264, 175)
+    assert result.total_guarantee == 200175
+    assert (result.gfon_fee, result.gfon_fee_guarantee) == (None, None)
+
+
+def test_gca_commodity_rate_by_date_and_direction():
+    rate = guarantee.gca_commodity_rate
+    assert rate(date(2025, 12, 31), EXIT) == 0  # no rate known before 2026
+    assert (rate(date(2026, 1, 1), ENTRY), rate(date(2026, 12, 31), EXIT)) == (Fraction("0.03322"), Fraction("0.11963"))
+    assert (rate(date(2027, 1, 1), ENTRY), rate(date(2030, 6, 1), EXIT)) == (Fraction("0.07914"), Fraction("0.2586"))
+
+
+def test_gca_commodity_rounds_half_up_once():
+    # 625 kWh/h x 24 / 1000 = 15 MWh a day; a February 2026 month = 420 MWh x 0.03322 = 13.9524 -> 13.95 at entry.
+    entry = Point(GCA, "Test point", "HU>AT", GCA_EIC, ENTRY)
+    table = make_table(make_row(eic=GCA_EIC, direction="Entry", operator=GCA, currency="EUR", unit="kWh/h"))
+    start, end = fee.resolve_period(fee.MONTH, year=2026, month=2)
+    result = calculate_guarantee(table, entry, fee.MONTH, start, end, "625", "kWh/h", None)
+    assert (result.commodity_fee, result.commodity_fee_guarantee) == (1395, 1395)
+
+
+def test_gca_gas_year_takes_the_first_three_months_not_the_dearest():
+    # 10 kWh/h at Year 1200 in 2025 = 1,000.00 a month, at 2400 from 1 January 2026 = 2,000.00 a month.
+    table = make_table(gca_row("2025-10-01", "2025-12-31", {"Year": 1200.0}), gca_row("2026-01-01", None, {"Year": 2400.0}))
+    result = gca_for(table, fee.GAS_YEAR, "10", "kWh/h", gas_year=2025)
+    assert [line.amount for line in result.fee.invoice] == [100000] * 3 + [200000] * 9
+    assert (result.capacity_fee, result.capacity_fee_guarantee) == (2100000, 300000)
+
+
+def test_gca_month_in_kwh_d_guarantees_the_whole_fee():
+    # 240 kWh/d x 28 days = 6.72 MWh x 0.11963 = 0.80 commodity.
+    result = gca_for(GCA_TABLE, fee.MONTH, "240", "kWh/d", year=2026, month=2)
+    assert (result.capacity_fee, result.capacity_fee_guarantee) == (100000, 100000)
+    assert (result.commodity_fee, result.commodity_fee_guarantee, result.total_guarantee) == (80, 80, 100080)
+
+
+def test_gca_day_has_no_security_deposit():
+    result = gca_for(GCA_TABLE, fee.DAY, "10", "kWh/h", day=date(2026, 2, 3))
+    assert (result.capacity_fee, result.commodity_fee) == (4000, 3)  # 0.24 MWh x 0.11963 = 0.03
+    assert (result.capacity_fee_guarantee, result.commodity_fee_guarantee, result.total_guarantee) == (None, None, None)
+    assert guarantee.is_gca_day(GCA_POINT, fee.DAY) and not guarantee.is_gca_day(POINT, fee.DAY)
+    assert not guarantee.is_gca_day(GCA_POINT, fee.MONTH)
+
+
+def test_gca_ignores_the_stage_and_the_ceghix():
+    result = gca_for(GCA_TABLE, fee.MONTH, "10", "kWh/h", stage=BOOKED, ceghix="abc", year=2026, month=2)
+    assert (result.capacity_fee_guarantee, result.gfon_fee) == (100000, None)
+
+
+def test_gca_surcharge_raises_the_first_months():
+    # 3,000.00 + 15% = 3,450.00, invoiced 1,150.00 a month; the first two months 2,300.00.
+    result = gca_for(GCA_TABLE, fee.QUARTER, "10", "kWh/h", "15", year=2026, quarter=4)
+    assert (result.capacity_fee, result.capacity_fee_guarantee) == (345000, 230000)
+    assert gca_for(GCA_TABLE, fee.QUARTER, "10", "kWh/h", "-1", year=2026, quarter=4) == \
+        fee.FeeError(guarantee.SURCHARGE_MESSAGE)
+
+
+def test_gca_note_covers_the_rule():
+    note = guarantee.GUARANTEE_NOTES[GCA]
+    for text in ("first two months", "first three months", "EUR 100,000", "5 working days after", "German one is binding",
+                 "commodity charge", "0.03322", "0.11963", "0.07914", "0.2586", "before 1 January 2026"):
+        assert text in note
 
 
 # --- the spec's worked figures on the real tariff file ----------------------------------------
@@ -155,6 +250,43 @@ def test_balassagyarmat_month_in_kwh_d_and_day_at_auction(real):
     day = real_guarantee(real, fee.DAY, "100000", "kWh/h", AUCTION, day=date(2026, 12, 5))
     assert (day.capacity_fee, day.capacity_fee_guarantee, day.total_guarantee) == (789600, 789600, 789600)
     assert month.total_guarantee + day.total_guarantee + 28010480 == 42806120  # the spec's list total
+
+
+def test_mosonmagyarovar_gca_figures_of_the_spec(real):
+    table, _ = real
+    point = next(p for p in points.build_catalog(table).singles_of(GCA) if p.name == "Mosonmagyaróvár" and p.flow == "AT>HU")
+
+    def gca(instrument, capacity, unit, surcharge=None, **selection):
+        start, end = fee.resolve_period(instrument, **selection)
+        return calculate_guarantee(table, point, instrument, start, end, capacity, unit, None, None, surcharge)
+
+    def amounts(r):
+        return r.capacity_fee, r.capacity_fee_guarantee, r.commodity_fee, r.commodity_fee_guarantee, r.total_guarantee
+
+    quarter = gca(fee.QUARTER, "120000", "kWh/h", year=2026, quarter=4)
+    assert [line.amount for line in quarter.fee.invoice] == [5003200] * 3
+    assert amounts(quarter) == (15009600, 10006400, 3169716, 2101660, 12108060)
+    year = gca(fee.GAS_YEAR, "120000", "kWh/h", gas_year=2025)
+    assert [line.amount for line in year.fee.invoice] == [2140000] * 3 + [3970000] * 9
+    assert amounts(year) == (42150000, 6420000, 9405789, 0, 6420000)  # no commodity rate in 2025
+    year = gca(fee.GAS_YEAR, "120000", "kWh/h", gas_year=2026)
+    assert amounts(year)[1:] == (11910000, 23501883, 3169716, 15079716)
+    month = gca(fee.MONTH, "2880000", "kWh/d", year=2027, month=1)
+    assert amounts(month) == (6267600, 6267600, 2308781, 2308781, 8576381)
+    december = gca(fee.MONTH, "150000", "kWh/h", year=2026, month=12)  # the user's example
+    assert (december.commodity_fee, december.commodity_fee_guarantee) == (1335071, 1335071)
+    day = gca(fee.DAY, "120000", "kWh/h", day=date(2026, 12, 5))
+    assert amounts(day) == (261600, None, 34453, None, None)
+    surcharged = gca(fee.QUARTER, "120000", "kWh/h", "10", year=2026, quarter=4)
+    assert [line.amount for line in surcharged.fee.invoice] == [5503520] * 3
+    assert amounts(surcharged) == (16510560, 11007040, 3169716, 2101660, 13108700)
+    day_surcharged = gca(fee.DAY, "120000", "kWh/h", "2,5", day=date(2026, 12, 5))
+    assert amounts(day_surcharged) == (268140, None, 34453, None, None)
+
+    entry = next(p for p in points.build_catalog(table).singles_of(GCA) if p.name == "VIP Oberkappel" and p.flow == "DE>AT")
+    start, end = fee.resolve_period(fee.QUARTER, year=2027, quarter=1)
+    oberkappel = calculate_guarantee(table, entry, fee.QUARTER, start, end, "120000", "kWh/h", None)
+    assert (oberkappel.commodity_fee, oberkappel.commodity_fee_guarantee) == (2051309, 1344747)
 
 
 # --- Auction surcharge -----------------------------------------------------------------------
