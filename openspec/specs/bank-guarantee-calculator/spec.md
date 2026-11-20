@@ -91,6 +91,8 @@ Each row SHALL show these columns, in this order:
 - VAT;
 - Total guarantee.
 
+The Stage, CEGHIX (EUR/MWh), GfON fee and GfON fee guarantee columns SHALL be shown only when the list holds at least one Eustream row; otherwise they SHALL be left out of both the list and the total table, and the other columns keep their order.
+
 Every amount SHALL be in the row's currency with thousands separators: EUR with two decimals, HUF in whole forints. For an Eustream row, the Commodity / volume fee, Commodity / volume fee guarantee and VAT cells SHALL show "–". For an Eustream "Capacity auction" row, the CEGHIX, GfON fee and GfON fee guarantee cells SHALL also show "–", and the total guarantee SHALL equal the capacity fee guarantee. For a Gas Connect Austria row, the Stage, CEGHIX, GfON fee, GfON fee guarantee and VAT cells SHALL show "–", and the total guarantee SHALL equal the capacity fee guarantee plus the commodity / volume fee guarantee; for a GCA day row the capacity fee guarantee, commodity / volume fee guarantee and total guarantee cells SHALL also show "–". For an FGSZ row, the Stage, CEGHIX, GfON fee and GfON fee guarantee cells SHALL show "–", and the total guarantee SHALL equal the capacity fee guarantee plus the commodity / volume fee guarantee plus the VAT.
 
 A total table under the list SHALL have one row per currency present in the list, EUR first and then HUF, labelled "Total" with that currency in its Currency column; each SHALL add up every amount column of the list's rows in that currency, counting "–" as zero.
@@ -118,6 +120,12 @@ When the list holds at least one Gas Connect Austria day row, the tab SHALL show
 - **THEN** a last row "All in EUR (1 EUR = 400 HUF)" shows a total guarantee of 336,928.75 EUR (280,104.80 + 22,729,581 / 400 = 56,823.95)
 - **WHEN** the box is set to "abc"
 - **THEN** the tab shows "The HUF per EUR rate must be a positive number." and the combined row is not shown
+
+#### Scenario: No Eustream row, no Stage, CEGHIX or GfON columns
+- **WHEN** the list holds only Gas Connect Austria and FGSZ rows
+- **THEN** neither the list nor the total table has a Stage, CEGHIX (EUR/MWh), GfON fee or GfON fee guarantee column, and the list's columns are TSO, Network point, Product, Capacity, Surcharge (%), Currency, Capacity fee, Commodity / volume fee, Capacity fee guarantee, Commodity / volume fee guarantee, VAT, Total guarantee
+- **WHEN** an Eustream booking is added to the same list
+- **THEN** the four columns appear again, with "–" in the GCA and FGSZ rows
 
 ### Requirement: Eustream capacity fee guarantee
 For Eustream, a row's capacity fee SHALL be the total that tab 2 shows for the same point, instrument, period, capacity and unit, including tab 2's monthly invoice (a gas year in twelfths, a quarter in thirds, each month at the tariff valid in it), raised by the row's auction surcharge: capacity × tariff + capacity × tariff × surcharge / 100. The surcharged fee SHALL be computed exactly and rounded to cents once, and its monthly invoice SHALL be split in the same proportions as tab 2's invoice, so that it adds up to the fee (Eustream's equal thirds or twelfths stay equal). With no surcharge the fee and invoice are tab 2's. The capacity fee guarantee follows Operational Order 7.6.2:

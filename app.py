@@ -481,6 +481,8 @@ GUARANTEE_AMOUNTS = {
 }
 GUARANTEE_COLUMNS = tuple(GUARANTEE_AMOUNTS)
 GUARANTEE_CURRENCIES = (money.EUR, money.HUF)  # the order of the total rows; another currency would follow
+# Columns only a staged TSO (Eustream) fills; left out of both tables when no row is such a TSO.
+EUSTREAM_ONLY_COLUMNS = ("Stage", "CEGHIX (EUR/MWh)", "GfON fee", "GfON fee guarantee")
 
 
 def product_label(instrument: str, selection: dict) -> str:
@@ -608,8 +610,9 @@ def guarantee_tab(table, catalog: points.Catalog) -> None:
         if isinstance(result, fee.FeeError):  # a row the current tariff file no longer prices
             st.warning(f"{booking['point'].name} {booking['point'].flow}, "
                        f"{product_label(booking['instrument'], booking['selection'])}: {result.message}")
-    event = st.dataframe(pd.DataFrame([guarantee_record(b, r) for b, r in zip(rows, results)]), hide_index=True,
-                         on_select="rerun", selection_mode="multi-row", key="guar_table")
+    hidden = [] if any(b["point"].tso in guarantee.STAGED_TSOS for b in rows) else list(EUSTREAM_ONLY_COLUMNS)
+    records = pd.DataFrame([guarantee_record(b, r) for b, r in zip(rows, results)]).drop(columns=hidden)
+    event = st.dataframe(records, hide_index=True, on_select="rerun", selection_mode="multi-row", key="guar_table")
     totals_slot = st.empty()  # the total table, filled once the HUF rate box below has been read
     st.caption("Amounts in each row's currency: EUR with cents, HUF in whole forints.")
     sums = guarantee_sums(results)
@@ -621,7 +624,8 @@ def guarantee_tab(table, catalog: points.Catalog) -> None:
         if message:
             st.warning(message)
         huf_rate = rate
-    totals_slot.dataframe(pd.DataFrame(guarantee_totals(sums, huf_rate)), hide_index=True)
+    totals = pd.DataFrame(guarantee_totals(sums, huf_rate)).drop(columns=hidden, errors="ignore")  # has no CEGHIX
+    totals_slot.dataframe(totals, hide_index=True)
     if any(guarantee.is_gca_day(b["point"], b["instrument"])
            for b, r in zip(rows, results) if not isinstance(r, fee.FeeError)):
         st.caption(guarantee.GCA_DAY_NOTE)

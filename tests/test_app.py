@@ -754,10 +754,32 @@ def test_tab3_gca_gas_year_and_surcharge(real_app):
     add_booking(at, tso="Gas Connect Austria", point_label=MOSONMAGYAROVAR_EXIT, capacity="120000", surcharge="10",
                 q_year=2026, quarter=4)
     table, _ = guarantee_tables(at)
-    assert table.iloc[:, 5:].values.tolist() == [
-        ["–", "–", "EUR", "421,500.00", "–", "94,057.89", "64,200.00", "–", "0.00", "–", "64,200.00"],
-        ["10", "–", "EUR", "165,105.60", "–", "31,697.16", "110,070.40", "–", "21,016.60", "–", "131,087.00"],
+    assert table.iloc[:, 4:].values.tolist() == [  # no Eustream row: no Stage, CEGHIX or GfON columns
+        ["–", "EUR", "421,500.00", "94,057.89", "64,200.00", "0.00", "–", "64,200.00"],
+        ["10", "EUR", "165,105.60", "31,697.16", "110,070.40", "21,016.60", "–", "131,087.00"],
     ]
+
+
+def test_tab3_ceghix_and_gfon_columns_only_with_an_eustream_row(real_app):
+    at = real_app
+    add_booking(at, tso="Gas Connect Austria", point_label=MOSONMAGYAROVAR_EXIT, capacity="120000",
+                q_year=2026, quarter=4)
+    add_booking(at, tso="FGSZ", point_label=CSANADPALOTA_EXIT, q_year=2026, quarter=4)
+    table, total = guarantee_tables(at)
+    assert list(table.columns) == [
+        "TSO", "Network point", "Product", "Capacity", "Surcharge (%)", "Currency",
+        "Capacity fee", "Commodity / volume fee", "Capacity fee guarantee", "Commodity / volume fee guarantee", "VAT",
+        "Total guarantee",
+    ]
+    assert not {"GfON fee", "GfON fee guarantee"} & set(total.columns)
+
+    add_booking(at, q_year=2026, quarter=4)  # an Eustream booking brings them back
+    table, total = guarantee_tables(at)
+    assert {"Stage", "CEGHIX (EUR/MWh)", "GfON fee", "GfON fee guarantee"} <= set(table.columns)
+    assert table["Stage"].tolist() == ["–", "–", "Booked capacity"]
+    assert {"GfON fee", "GfON fee guarantee"} <= set(total.columns)
+    assert table["GfON fee"].tolist() == ["–", "–", "58,180.80"]
+    assert table["CEGHIX (EUR/MWh)"].tolist() == ["–", "–", "30"]
 
 
 CSANADPALOTA_EXIT = "Csanádpalota HU>RO"
