@@ -572,11 +572,11 @@ MOSONMAGYAROVAR_EXIT = "Mosonmagyaróvár AT>HU"
 
 def add_booking(at, instrument="quarter", stage="Booked capacity", capacity="100000", unit="kWh/h", ceghix="30",
                 surcharge="", tso="Eustream", point_label=BALASSAGYARMAT_EXIT, ote="107.705", czk_rate="24.36",
-                **period):
+                bundled=False, **period):
     """Fill in tab 3 for `point_label` (Balassagyarmat SK>HU by default) and press Add to list.
     `period` sets the picker keys without their `guar_` prefix (e.g. q_year=2026, quarter=4).
     The stage and CEGHIX are set only when the TSO asks for them (Eustream), the OTE index and CZK per EUR
-    rate only at a NET4GAS exit point."""
+    rate only at a NET4GAS exit point, the bundled box only at a Bulgartransgaz point."""
     at.selectbox(key="guar_tso").select(tso).run()
     point = next(s for s in at.selectbox if s.key and s.key.startswith("guar_point_"))
     point.select(next(o for o in point.options if o.startswith(point_label + " ")))
@@ -594,6 +594,8 @@ def add_booking(at, instrument="quarter", stage="Booked capacity", capacity="100
     if "guar_ote" in {t.key for t in at.text_input}:
         at.text_input(key="guar_ote").set_value(ote)
         at.text_input(key="guar_czk_rate").set_value(czk_rate)
+    if "guar_bundled" in {c.key for c in at.checkbox}:
+        at.checkbox(key="guar_bundled").set_value(bundled)
     at.button(key="guar_add").click().run()
     assert not at.exception, [e.value for e in at.exception]
 
@@ -613,7 +615,8 @@ def select_rows(at, rows):
 
 def test_tab3_offers_eustream_and_shows_the_ceghix_box_only_for_booked_capacity(real_app):
     at = real_app
-    assert at.selectbox(key="guar_tso").options == ["Eustream", "Gas Connect Austria", "FGSZ", "NET4GAS"]
+    assert at.selectbox(key="guar_tso").options == [
+        "Eustream", "Gas Connect Austria", "FGSZ", "NET4GAS", "Bulgartransgaz"]
     assert at.selectbox(key="guar_tso").value == "EUSTR"
     eustream_points = at.selectbox(key="guar_point_EUSTR").options
     assert "Balassagyarmat SK>HU (21Z000000000358C)" in eustream_points
@@ -644,21 +647,20 @@ def test_tab3_list_of_the_spec_bookings_and_its_total(real_app):
     add_booking(at, instrument="month", capacity="2400000", unit="kWh/d", m_year=2027, month=1)
     add_booking(at, instrument="day", stage="Capacity auction", day=date(2026, 12, 5))
     table, total = guarantee_tables(at)
-    assert list(table.columns) == [
+    assert list(table.columns) == [  # no row has a commodity fee: no Commodity / volume columns
         "TSO", "Network point", "Product", "Capacity", "Stage", "Surcharge (%)", "CEGHIX (EUR/MWh)", "Currency",
-        "Capacity fee", "GfON fee", "Commodity / volume fee",
-        "Capacity fee guarantee", "GfON fee guarantee", "Commodity / volume fee guarantee", "VAT", "Total guarantee",
+        "Capacity fee", "GfON fee", "Capacity fee guarantee", "GfON fee guarantee", "VAT", "Total guarantee",
     ]
     assert table.values.tolist() == [
         ["Eustream", BALASSAGYARMAT_EXIT, "Quarter 2026 Q4", "100,000 kWh/h", "Booked capacity", "–", "30", "EUR",
-         "361,344.00", "58,180.80", "–", "240,896.00", "39,208.80", "–", "–", "280,104.80"],
+         "361,344.00", "58,180.80", "240,896.00", "39,208.80", "–", "280,104.80"],
         ["Eustream", BALASSAGYARMAT_EXIT, "Month 2027-01", "2,400,000 kWh/d", "Booked capacity", "–", "30", "EUR",
-         "120,456.00", "19,604.40", "–", "120,456.00", "19,604.40", "–", "–", "140,060.40"],
+         "120,456.00", "19,604.40", "120,456.00", "19,604.40", "–", "140,060.40"],
         ["Eustream", BALASSAGYARMAT_EXIT, "Day 2026-12-05", "100,000 kWh/h", "Capacity auction", "–", "–", "EUR",
-         "7,896.00", "–", "–", "7,896.00", "–", "–", "–", "7,896.00"],
+         "7,896.00", "–", "7,896.00", "–", "–", "7,896.00"],
     ]
-    assert total.values.tolist() == [["Total", "EUR", "489,696.00", "77,785.20", "0.00", "369,248.00", "58,813.20",
-                                      "0.00", "0.00", "428,061.20"]]
+    assert total.values.tolist() == [["Total", "EUR", "489,696.00", "77,785.20", "369,248.00", "58,813.20",
+                                      "0.00", "428,061.20"]]
     assert "guar_rate_HUF" not in {t.key for t in at.text_input}  # no HUF row, no rate box
 
 
@@ -670,12 +672,12 @@ def test_tab3_surcharge_raises_the_capacity_fee_and_its_guarantee(real_app):
     add_booking(at, instrument="day", stage="Capacity auction", day=date(2026, 12, 5), surcharge="2,5")
     table, total = guarantee_tables(at)
     assert table.iloc[:, 4:].values.tolist() == [
-        ["Booked capacity", "10", "30", "EUR", "397,478.40", "58,180.80", "–", "264,985.60", "39,208.80", "–", "–",
+        ["Booked capacity", "10", "30", "EUR", "397,478.40", "58,180.80", "264,985.60", "39,208.80", "–",
          "304,194.40"],
-        ["Capacity auction", "2.5", "–", "EUR", "8,093.40", "–", "–", "8,093.40", "–", "–", "–", "8,093.40"],
+        ["Capacity auction", "2.5", "–", "EUR", "8,093.40", "–", "8,093.40", "–", "–", "8,093.40"],
     ]
-    assert total.values.tolist() == [["Total", "EUR", "405,571.80", "58,180.80", "0.00", "273,079.00", "39,208.80",
-                                      "0.00", "0.00", "312,287.80"]]
+    assert total.values.tolist() == [["Total", "EUR", "405,571.80", "58,180.80", "273,079.00", "39,208.80",
+                                      "0.00", "312,287.80"]]
 
 
 def test_tab3_refuses_a_negative_surcharge(real_app):
@@ -690,8 +692,8 @@ def test_tab3_gas_year_row(real_app):
     add_booking(at, instrument="gas_year", capacity="10000", ceghix="40", gas_year=2025)
     table, _ = guarantee_tables(at)
     assert table.iloc[0, 2:].tolist() == [
-        "Gas year 2025/26", "10,000 kWh/h", "Booked capacity", "–", "40", "EUR", "91,250.00", "30,528.60", "–",
-        "16,060.00", "5,185.68", "–", "–", "21,245.68",
+        "Gas year 2025/26", "10,000 kWh/h", "Booked capacity", "–", "40", "EUR", "91,250.00", "30,528.60",
+        "16,060.00", "5,185.68", "–", "21,245.68",
     ]
 
 
@@ -902,6 +904,54 @@ def test_tab3_net4gas_row_czk_total_and_the_combined_eur_total(real_app):
     _, total = guarantee_tables(at)
     assert len(total) == 3
     assert any(w.value == "The CZK per EUR rate must be a positive number." for w in at.warning)
+
+
+KULATA_EXIT = "Kulata/Sidirokastron BG>GR"
+
+
+def test_tab3_bulgartransgaz_inputs_and_description(real_app):
+    at = real_app
+    at.selectbox(key="guar_tso").select("Bulgartransgaz").run()
+    options = at.selectbox(key="guar_point_BGTRGAZ").options
+    assert len(options) == 13 and "Kulata/Sidirokastron BG>GR (21Z000000000020C)" in options
+    assert at.checkbox(key="guar_bundled").value is False
+    assert any(c.value == "Bundled capacity (Regulation (EU) 2017/459): only half of the auction premium counts in "
+               "the guarantee." for c in at.caption)
+    assert "guar_stage" not in {r.key for r in at.radio}
+    assert not {"guar_ceghix", "guar_ote", "guar_czk_rate"} & {t.key for t in at.text_input}
+    expander = next(e for e in at.expander if e.label == "How Bulgartransgaz calculates the financial guarantee")
+    text = " ".join(m.value for m in expander.markdown)
+    for phrase in ("6%", "25%", "70%", "100%", "half of the auction premium", "EUR 2,500"):
+        assert phrase in text
+
+    at.selectbox(key="guar_tso").select("FGSZ").run()
+    assert "guar_bundled" not in {c.key for c in at.checkbox}
+
+
+def test_tab3_bulgartransgaz_rows_and_the_bundled_column(real_app):
+    at = real_app
+    add_booking(at, tso="Bulgartransgaz", point_label=KULATA_EXIT, surcharge="10", bundled=True, q_year=2026,
+                quarter=4)
+    add_booking(at, tso="Bulgartransgaz", point_label=KULATA_EXIT, q_year=2026, quarter=4)
+    table, total = guarantee_tables(at)
+    assert list(table.columns) == [
+        "TSO", "Network point", "Product", "Capacity", "Surcharge (%)", "Bundled", "Currency",
+        "Capacity fee", "Capacity fee guarantee", "VAT", "Total guarantee",
+    ]  # no commodity fee in a Bulgartransgaz guarantee: the Commodity / volume columns are left out
+    assert table.values.tolist() == [
+        ["Bulgartransgaz", KULATA_EXIT, "Quarter 2026 Q4", "100,000 kWh/h", "10", "Yes", "EUR",
+         "202,685.74", "48,368.19", "9,673.64", "58,041.83"],
+        ["Bulgartransgaz", KULATA_EXIT, "Quarter 2026 Q4", "100,000 kWh/h", "–", "No", "EUR",
+         "184,259.76", "46,064.94", "9,212.99", "55,277.93"],
+    ]
+    assert "Commodity / volume fee" not in total.columns
+    assert total.values.tolist()[0][-1] == "113,319.76"
+
+    add_booking(at, tso="FGSZ", point_label=CSANADPALOTA_EXIT, q_year=2026, quarter=4)
+    table, total = guarantee_tables(at)
+    assert table["Bundled"].tolist() == ["Yes", "No", "–"]
+    assert table["Commodity / volume fee"].tolist() == ["–", "–", "6,451,776"]  # FGSZ's volume fee brings them back
+    assert "Commodity / volume fee guarantee" in total.columns
 
 
 def test_tab3_remove_selected_rows_and_clear(real_app):

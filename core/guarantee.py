@@ -14,8 +14,9 @@ from fractions import Fraction
 from typing import Callable
 
 from .fee import DAY, GAS_YEAR, MONTH, QUARTER, FeeError, FeeResult, calculate_fee
-from .money import CZK, parse_fx_rate, parse_number, rate_message, round_minor, split_by_weights
-from .points import ENTRY, EUSTREAM, EXIT, FGSZ, GCA, NET4GAS, Point
+from .money import (CZK, minor_to_major, parse_fx_rate, parse_number, rate_message, round_minor,
+                    split_by_weights)
+from .points import BULGARTRANSGAZ, ENTRY, EUSTREAM, EXIT, FGSZ, GCA, NET4GAS, Point
 from .tariffs import TariffTable
 
 AUCTION = "Capacity auction"  # the guarantee covers the capacity fee only
@@ -311,12 +312,52 @@ NET4GAS_NOTE = """**How NET4GAS sets the financial security** (Network Code of 7
 **Forms** (10): an irrevocable and unconditional bank guarantee, or a guarantee from an eligible guarantor (on NET4GAS's sample), from an issuer rated at least BBB- / Baa3, or a security deposit to NET4GAS's bank account.
 """
 
+# Bulgartransgaz, GTC chapter 8 (approved 15 September 2026): the share of the booked product's value, auction
+# premium included, that is reserved from the credit limit (8.10), plus VAT, which 8.10 always includes.
+BULGARTRANSGAZ_SHARE = {GAS_YEAR: Fraction(6, 100), QUARTER: Fraction(25, 100), MONTH: Fraction(70, 100),
+                        DAY: Fraction(1)}
+BULGARTRANSGAZ_VAT = Fraction(20, 100)
+BUNDLED_NOTE = "Bundled capacity (Regulation (EU) 2017/459): only half of the auction premium counts in the guarantee."
+
+
+def bulgartransgaz_guarantee(result: FeeResult, ceghix: Fraction | None = None,
+                             counted: FeeResult | None = None) -> GuaranteeResult:
+    """Bulgartransgaz, GTC 8.10: the product's value (capacity x price, plus the auction premium) times 6% for a
+    gas year, 25% for a quarter, 70% for a month or 100% for a day, rounded to cents, plus 20% VAT on it, rounded
+    once, so the row adds up. `counted` is the fee whose value is reserved when it differs from the shown one (a
+    bundled booking, 8.11, counts half the premium); the capacity fee shown is always `result`'s."""
+    value = (counted or result).exact_total
+    reserved = round_minor(value * BULGARTRANSGAZ_SHARE[result.instrument], result.currency)
+    vat = round_minor(minor_to_major(reserved, result.currency) * BULGARTRANSGAZ_VAT, result.currency)
+    return GuaranteeResult(result, result.total, reserved, vat=vat)
+
+
+BULGARTRANSGAZ_NOTE = """**How Bulgartransgaz sets the credit limit** (General Terms and Conditions to the Harmonized Contract for Access and Natural Gas Transport through Bulgartransgaz EAD Gas Transmission Network, approved on 15 September 2026, chapter 8)
+
+**How much** (8.9–8.11). Every user keeps a credit limit with Bulgartransgaz, and can book capacity at the Regional Booking Platform (RBP) only up to the credit limit still available. For each allocated product, the RBP reserves (blocks) a share of the product's value, the booked capacity × the price of the product, **including VAT and the auction premium (with VAT)**:
+- **Annual product (gas year):** **6%** of its value.
+- **Quarter:** **25%**.
+- **Month:** **70%**.
+- **Day-ahead and within-day (day):** **100%**.
+- **Bundled capacity** (8.11, auctions under Regulation (EU) 2017/459): only **half of the auction premium** counts. Tick "Bundled capacity" for such a booking.
+- This tab takes the product's value from tab 2's fee, with the tariff valid during the product; 8.10 names the price on the auction date, which differs only if Bulgartransgaz changes its tariff in between. The VAT is always **20%**.
+
+**Minimum** (8.2). The credit limit is at least **EUR 2,500** in total. It is not included in this tab's totals.
+
+**Release** (8.14). The reserved amount is released within 2 days of the last monthly instalment of an annual or quarterly product, or of the payment of a monthly, day-ahead or within-day product, and of the auction premium, provided nothing is overdue. Secondary market transfers reserve the amounts from the acquiring user's credit limit (8.12–8.13).
+
+**If drawn on** (7.11, 7.15, 8.15–8.18). If an invoice is unpaid 7 days after it was due, Bulgartransgaz may use the credit limit, after a two-day e-mail notice. The user restores it within **5 working days** of the notice, to at least the amounts required for its booked products. Otherwise Bulgartransgaz may interrupt transmission and terminate the contract.
+
+**Forms** (8.1, 8.3–8.7). A cash deposit in EUR to Bulgartransgaz's account, a bank guarantee, or both. The bank guarantee is unconditional and irrevocable, in EUR, from an EU bank rated at least **B** (S&P or equivalent), on Bulgartransgaz's template, valid for at least **12 months**, and renewed at least **45 days** before it expires. Bulgartransgaz pays no interest on the deposit (8.20) and returns it within 5 working days of a request when nothing is due (8.21–8.23).
+"""
+
 # Each supported TSO's guarantee rules in words, shown on tab 3 when the TSO is chosen.
 GUARANTEE_NOTES: dict[str, str] = {
     EUSTREAM: EUSTREAM_NOTE,
     GCA: GCA_NOTE,
     FGSZ: FGSZ_NOTE,
     NET4GAS: NET4GAS_NOTE,
+    BULGARTRANSGAZ: BULGARTRANSGAZ_NOTE,
 }
 
 
@@ -325,10 +366,16 @@ GUARANTEE_RULES: dict[str, Callable[[FeeResult, Fraction | None], GuaranteeResul
     GCA: gca_guarantee,
     FGSZ: fgsz_guarantee,
     NET4GAS: net4gas_guarantee,
+    BULGARTRANSGAZ: bulgartransgaz_guarantee,
 }
 
 # TSOs whose guarantee depends on the stage (and, once booked, on the CEGHIX); tab 3 asks for both only for them.
 STAGED_TSOS = frozenset({EUSTREAM})
+
+
+def asks_bundled(point: Point) -> bool:
+    """A Bulgartransgaz point, whose guarantee counts half the auction premium for bundled capacity (8.11)."""
+    return point.tso == BULGARTRANSGAZ
 
 
 def is_gca_day(point: Point, instrument: str) -> bool:
@@ -349,12 +396,14 @@ def calculate_guarantee(
     surcharge_text=None,
     ote_text=None,
     czk_rate_text=None,
+    bundled: bool = False,
 ) -> GuaranteeResult | FeeError:
     """The guarantee for one booking at `point` (a TSO in `GUARANTEE_RULES`); `ceghix_text`
     is read only for booked capacity. The auction surcharge (`surcharge_text`, in %) raises the
     capacity fee and so its guarantee, at either stage; the GfON does not depend on it.
     The stage matters only for a TSO in `STAGED_TSOS`; for the others it and the CEGHIX are ignored.
-    The OTE index and CZK per EUR rate are read only at a NET4GAS exit point, for its variable part."""
+    The OTE index and CZK per EUR rate are read only at a NET4GAS exit point, for its variable part.
+    `bundled` matters only at a Bulgartransgaz point: its guarantee then counts half the surcharge."""
     staged = point.tso in STAGED_TSOS
     if staged and stage not in STAGES:
         raise ValueError(f"Unknown stage {stage!r}")
@@ -365,13 +414,16 @@ def calculate_guarantee(
     surcharge = parse_surcharge(surcharge_text)
     if isinstance(surcharge, FeeError):
         return surcharge
-    result = with_surcharge(result, surcharge)
+    base, result = result, with_surcharge(result, surcharge)
     ceghix = None
     if staged and stage == BOOKED:
         ceghix = parse_ceghix(ceghix_text)
         if isinstance(ceghix, FeeError):
             return ceghix
     guarantee = replace(rule(result, ceghix), surcharge=surcharge)
+    if bundled and asks_bundled(point):
+        counted = with_surcharge(base, surcharge / 2)
+        guarantee = replace(bulgartransgaz_guarantee(result, counted=counted), surcharge=surcharge)
     if asks_variable_inputs(point):
         ote = parse_ote(ote_text)
         if isinstance(ote, FeeError):

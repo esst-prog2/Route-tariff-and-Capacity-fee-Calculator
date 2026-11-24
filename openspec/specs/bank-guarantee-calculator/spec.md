@@ -8,14 +8,14 @@ Lets a trader work out the financial guarantee (bank guarantee) a TSO requires f
 
 ### Requirement: Booking inputs
 The app SHALL have a third tab, "Bank Guarantee Calculator", after the Route Tariff Calculator and the Capacity Fee Calculator. The tab SHALL take:
-- a TSO from a dropdown that offers Eustream, Gas Connect Austria, FGSZ and then NET4GAS, starting on Eustream;
+- a TSO from a dropdown that offers Eustream, Gas Connect Austria, FGSZ, NET4GAS and then Bulgartransgaz, starting on Eustream;
 - a network point from a dropdown of that TSO's single sides, labelled as on tab 2;
 - a product instrument (gas year, quarter, month or day) and its period, with the same pickers, choices and defaults as tab 2;
 - a requested capacity with its unit (kWh/h, the default, or kWh/d), as on tab 2;
 - for Eustream only, a stage: "Capacity auction" or "Booked capacity" (the default);
 - an "Auction surcharge (%)" box, for every TSO and at either stage, that starts blank and carries the note "The auction surcharge (premium) in %, added to the tariff; leave it blank for none." A blank box means 0%; a decimal comma is accepted.
 
-For Eustream at "Booked capacity" the tab SHALL also take the CEGHIX in EUR/MWh, in a box that starts blank and carries the note "Enter the CEGHIX valid on the day before the booking." For Eustream at "Capacity auction" the CEGHIX box SHALL NOT be shown. For Gas Connect Austria, FGSZ and NET4GAS neither the stage nor the CEGHIX box SHALL be shown. FGSZ and NET4GAS SHALL have no VAT input, and NET4GAS no credit limit input. For a NET4GAS exit point the tab SHALL also take, side by side, an "OTE index (EUR/MWh)" box with the note "The OTE index in EUR/MWh that NET4GAS uses for the variable part." and a "CZK per 1 EUR (variable part)" box with the note "The CZK per EUR rate that NET4GAS uses for the variable part.", both starting blank; a decimal comma is accepted as elsewhere ("24,36" is 24.36, but "107,705" is read as 107,705, so three decimals need a point). For a NET4GAS entry point neither box SHALL be shown.
+For Eustream at "Booked capacity" the tab SHALL also take the CEGHIX in EUR/MWh, in a box that starts blank and carries the note "Enter the CEGHIX valid on the day before the booking." For Eustream at "Capacity auction" the CEGHIX box SHALL NOT be shown. For Gas Connect Austria, FGSZ, NET4GAS and Bulgartransgaz neither the stage nor the CEGHIX box SHALL be shown. FGSZ, NET4GAS and Bulgartransgaz SHALL have no VAT input, and NET4GAS no credit limit input. For a NET4GAS exit point the tab SHALL also take, side by side, an "OTE index (EUR/MWh)" box with the note "The OTE index in EUR/MWh that NET4GAS uses for the variable part." and a "CZK per 1 EUR (variable part)" box with the note "The CZK per EUR rate that NET4GAS uses for the variable part.", both starting blank; a decimal comma is accepted as elsewhere ("24,36" is 24.36, but "107,705" is read as 107,705, so three decimals need a point). For a NET4GAS entry point neither box SHALL be shown. For a Bulgartransgaz point the tab SHALL also show a "Bundled capacity" checkbox, unticked at first, with the note "Bundled capacity (Regulation (EU) 2017/459): only half of the auction premium counts in the guarantee."; for every other TSO it SHALL NOT be shown.
 
 #### Scenario: CEGHIX box only for booked capacity
 - **WHEN** the TSO is Eustream and the stage is "Booked capacity"
@@ -29,11 +29,11 @@ For Eustream at "Booked capacity" the tab SHALL also take the CEGHIX in EUR/MWh,
 
 #### Scenario: Eustream and GCA are offered
 - **WHEN** the user opens the TSO dropdown
-- **THEN** the choices are Eustream, Gas Connect Austria, FGSZ and NET4GAS, in that order, and Eustream is chosen
+- **THEN** the choices are Eustream, Gas Connect Austria, FGSZ, NET4GAS and Bulgartransgaz, in that order, and Eustream is chosen
 
 #### Scenario: Only Eustream is offered
 - **WHEN** Eustream is the chosen TSO and the user opens the network point dropdown
-- **THEN** it lists only Eustream's single sides (for example "Balassagyarmat SK>HU (21Z000000000358C)"), no GCA, FGSZ or NET4GAS point
+- **THEN** it lists only Eustream's single sides (for example "Balassagyarmat SK>HU (21Z000000000358C)"), no GCA, FGSZ, NET4GAS or Bulgartransgaz point
 
 #### Scenario: GCA inputs
 - **WHEN** the user chooses Gas Connect Austria
@@ -51,8 +51,14 @@ For Eustream at "Booked capacity" the tab SHALL also take the CEGHIX in EUR/MWh,
 - **WHEN** the point is Lanžhot SK>CZ
 - **THEN** neither box is shown
 
+#### Scenario: Bulgartransgaz inputs
+- **WHEN** the user chooses Bulgartransgaz
+- **THEN** the network point dropdown lists Bulgartransgaz's 13 single sides as on tab 2 (for example "Kulata/Sidirokastron BG>GR (21Z000000000020C)"), the "Auction surcharge (%)" box and the unticked "Bundled capacity" checkbox with its note are shown, and no stage, CEGHIX, VAT, OTE index or rate input is shown
+- **WHEN** the user then chooses FGSZ
+- **THEN** the "Bundled capacity" checkbox is not shown
+
 ### Requirement: List of bookings
-An "Add to list" button SHALL add the booking to a list shown as a table. Each row SHALL keep the TSO, surcharge and, for Eustream, the stage and CEGHIX, and for a NET4GAS exit point the OTE index and CZK per EUR rate it was added with. A booking SHALL NOT be added, and a message SHALL be shown instead, in these cases:
+An "Add to list" button SHALL add the booking to a list shown as a table. Each row SHALL keep the TSO, surcharge and, for Eustream, the stage and CEGHIX, for a NET4GAS exit point the OTE index and CZK per EUR rate, and for Bulgartransgaz whether it is bundled, it was added with. A booking SHALL NOT be added, and a message SHALL be shown instead, in these cases:
 - the capacity is invalid: tab 2's message "Capacity must be a positive number.";
 - the period has no tariff: tab 2's no-tariff message;
 - the surcharge is negative or not a number: "The surcharge must be a percentage of 0 or more.";
@@ -96,10 +102,11 @@ Each row SHALL show these columns, in this order:
 - Capacity, as typed with its unit, with thousands separators, e.g. "100,000 kWh/h";
 - Stage;
 - Surcharge (%), as typed, e.g. "10" or "2.5", or "–" when there is none (blank or 0);
+- Bundled: "Yes" or "No" for a Bulgartransgaz row, "–" for any other;
 - CEGHIX (EUR/MWh);
 - OTE index (EUR/MWh), as typed;
 - CZK per EUR, as typed;
-- Currency: EUR for Eustream and Gas Connect Austria, HUF for FGSZ, CZK for NET4GAS;
+- Currency: EUR for Eustream, Gas Connect Austria and Bulgartransgaz, HUF for FGSZ, CZK for NET4GAS;
 - Capacity fee;
 - GfON fee;
 - Commodity / volume fee;
@@ -111,9 +118,9 @@ Each row SHALL show these columns, in this order:
 
 The Stage, CEGHIX (EUR/MWh), GfON fee and GfON fee guarantee columns SHALL be shown only when the list holds at least one Eustream row; otherwise they SHALL be left out of both the list and the total table, and the other columns keep their order.
 
-Every amount SHALL be in the row's currency with thousands separators: EUR and CZK with two decimals, HUF in whole forints. For an Eustream row, the Commodity / volume fee, Commodity / volume fee guarantee and VAT cells SHALL show "–". For an Eustream "Capacity auction" row, the CEGHIX, GfON fee and GfON fee guarantee cells SHALL also show "–", and the total guarantee SHALL equal the capacity fee guarantee. For a Gas Connect Austria row, the Stage, CEGHIX, GfON fee, GfON fee guarantee and VAT cells SHALL show "–", and the total guarantee SHALL equal the capacity fee guarantee plus the commodity / volume fee guarantee; for a GCA day row the capacity fee guarantee, commodity / volume fee guarantee and total guarantee cells SHALL also show "–". For an FGSZ row, the Stage, CEGHIX, GfON fee and GfON fee guarantee cells SHALL show "–", and the total guarantee SHALL equal the capacity fee guarantee plus the commodity / volume fee guarantee plus the VAT. For a NET4GAS row, the Stage, CEGHIX, GfON fee, GfON fee guarantee, Commodity / volume fee guarantee and VAT cells SHALL show "–", the Commodity / volume fee cell SHALL show the variable part (0.00 at an entry point), and the total guarantee SHALL equal the capacity fee guarantee. For every row other than a NET4GAS exit row, the OTE index and CZK per EUR cells SHALL show "–".
+Every amount SHALL be in the row's currency with thousands separators: EUR and CZK with two decimals, HUF in whole forints. For an Eustream row, the Commodity / volume fee, Commodity / volume fee guarantee and VAT cells SHALL show "–". For an Eustream "Capacity auction" row, the CEGHIX, GfON fee and GfON fee guarantee cells SHALL also show "–", and the total guarantee SHALL equal the capacity fee guarantee. For a Gas Connect Austria row, the Stage, CEGHIX, GfON fee, GfON fee guarantee and VAT cells SHALL show "–", and the total guarantee SHALL equal the capacity fee guarantee plus the commodity / volume fee guarantee; for a GCA day row the capacity fee guarantee, commodity / volume fee guarantee and total guarantee cells SHALL also show "–". For an FGSZ row, the Stage, CEGHIX, GfON fee and GfON fee guarantee cells SHALL show "–", and the total guarantee SHALL equal the capacity fee guarantee plus the commodity / volume fee guarantee plus the VAT. For a NET4GAS row, the Stage, CEGHIX, GfON fee, GfON fee guarantee, Commodity / volume fee guarantee and VAT cells SHALL show "–", the Commodity / volume fee cell SHALL show the variable part (0.00 at an entry point), and the total guarantee SHALL equal the capacity fee guarantee. For every row other than a NET4GAS exit row, the OTE index and CZK per EUR cells SHALL show "–". For a Bulgartransgaz row, the Stage, CEGHIX, GfON fee, GfON fee guarantee, Commodity / volume fee and Commodity / volume fee guarantee cells SHALL show "–", and the total guarantee SHALL equal the capacity fee guarantee plus the VAT.
 
-The OTE index (EUR/MWh) and CZK per EUR columns SHALL be shown only when the list holds at least one NET4GAS exit row; otherwise they SHALL be left out of the list, and the other columns keep their order.
+The OTE index (EUR/MWh) and CZK per EUR columns SHALL be shown only when the list holds at least one NET4GAS exit row; otherwise they SHALL be left out of the list, and the other columns keep their order. The Bundled column SHALL be shown only when the list holds at least one Bulgartransgaz row; otherwise it SHALL be left out of the list. The Commodity / volume fee and Commodity / volume fee guarantee columns SHALL be shown only when at least one row of the list has a commodity / volume fee (a Gas Connect Austria, FGSZ or NET4GAS row); otherwise, as for a list of only Eustream and Bulgartransgaz rows, they SHALL be left out of both the list and the total table, and the other columns keep their order.
 
 A total table under the list SHALL have one row per currency present in the list, EUR first, then HUF, then CZK, labelled "Total" with that currency in its Currency column; each SHALL add up every amount column of the list's rows in that currency, counting "–" as zero.
 
@@ -156,6 +163,16 @@ When the list holds at least one Gas Connect Austria day row, the tab SHALL show
 - **THEN** a last row "All in EUR (1 EUR = 400 HUF = 25 CZK)" shows a total guarantee of 368,869.23 EUR (280,104.80 + 22,729,581 / 400 + 798,512.00 / 25)
 - **WHEN** the CZK box is set to "abc"
 - **THEN** the tab shows "The CZK per EUR rate must be a positive number." and the combined row is not shown
+
+#### Scenario: Bulgartransgaz rows and the Bundled column
+- **WHEN** the list holds Kulata/Sidirokastron BG>GR, Quarter 2026 Q4, 100,000 kWh/h, surcharge 10, bundled (total guarantee 58,041.83) and the same booking without surcharge, not bundled (55,277.93)
+- **THEN** the list's columns are TSO, Network point, Product, Capacity, Surcharge (%), Bundled, Currency, Capacity fee, Capacity fee guarantee, VAT, Total guarantee (no commodity / volume columns, since no row has a commodity fee); the Bundled cells read "Yes" and "No"; and the EUR total guarantee is 113,319.76
+- **WHEN** an FGSZ booking is added
+- **THEN** its Bundled cell shows "–", and the Commodity / volume fee columns appear, with "–" in the Bulgartransgaz rows
+
+#### Scenario: An Eustream-only list has no commodity columns
+- **WHEN** the list holds only Eustream rows
+- **THEN** neither the list nor the total table has a Commodity / volume fee or Commodity / volume fee guarantee column
 
 ### Requirement: Eustream capacity fee guarantee
 For Eustream, a row's capacity fee SHALL be the total that tab 2 shows for the same point, instrument, period, capacity and unit, including tab 2's monthly invoice (a gas year in twelfths, a quarter in thirds, each month at the tariff valid in it), raised by the row's auction surcharge: capacity × tariff + capacity × tariff × surcharge / 100. The surcharged fee SHALL be computed exactly and rounded to cents once, and its monthly invoice SHALL be split in the same proportions as tab 2's invoice, so that it adds up to the fee (Eustream's equal thirds or twelfths stay equal). With no surcharge the fee and invoice are tab 2's. The capacity fee guarantee follows Operational Order 7.6.2:
@@ -414,3 +431,54 @@ When NET4GAS is the chosen TSO, the tab SHALL show, under the TSO dropdown, a cl
 #### Scenario: NET4GAS description
 - **WHEN** NET4GAS is the chosen TSO
 - **THEN** the tab shows a closed expander "How NET4GAS calculates the financial guarantee" that mentions the monthly payment, the most expensive month, the Credit Limit, 21% VAT and 90 calendar days
+
+### Requirement: Bulgartransgaz credit limit reservation
+For Bulgartransgaz, a row's capacity fee SHALL be the total that tab 2 shows for the same point, instrument, period, capacity and unit, in EUR, raised by the row's auction surcharge and rounded to cents once, as for the other TSOs. The guarantee SHALL be the amount reserved from the credit limit under section 8.10 of the General Terms and Conditions to Bulgartransgaz's Harmonized Contract for Access and Natural Gas Transport (approved on 15 September 2026): a share of the product's value, the capacity fee including the auction premium,
+- gas year (annual product): 6%;
+- quarter: 25%;
+- month: 70%;
+- day (day-ahead and within-day): 100%;
+
+rounded to cents (halves away from zero), shown as the capacity fee guarantee. For a bundled booking (8.11) the value SHALL count only half of the auction premium: the fee raised by half the surcharge, exact before the share is taken; the capacity fee shown SHALL still include the full surcharge. The VAT SHALL always be 20% of the capacity fee guarantee, rounded to cents, and the total guarantee SHALL be the capacity fee guarantee plus the VAT. The product's value SHALL use the tariff valid during the product, as on tab 2, not the tariff on the auction date. The minimum credit limit of EUR 2,500 (8.2) SHALL NOT be added to any row or total.
+
+#### Scenario: Quarter at an exit point
+- **WHEN** the booking is Kulata/Sidirokastron BG>GR, Quarter 2026 Q4, 100,000 kWh/h
+- **THEN** the currency is EUR, the capacity fee is 184,259.76, the capacity fee guarantee 46,064.94 (25%), the VAT 9,212.99 and the total guarantee 55,277.93
+
+#### Scenario: Gas year
+- **WHEN** the booking is Kulata/Sidirokastron BG>GR, Gas year 2026/27, 100,000 kWh/h
+- **THEN** the capacity fee is 497,638.32, the capacity fee guarantee 29,858.30 (6%), the VAT 5,971.66 and the total guarantee 35,829.96
+
+#### Scenario: Month typed in kWh/d
+- **WHEN** the booking is Kulata/Sidirokastron BG>GR, Month 2027-01, 2,400,000 kWh/d (100,000 kWh/h)
+- **THEN** the capacity fee is 85,206.48, the capacity fee guarantee 59,644.54 (70%), the VAT 11,928.91 and the total guarantee 71,573.45
+
+#### Scenario: Day
+- **WHEN** the booking is Kulata/Sidirokastron BG>GR, Day 2026-12-05, 100,000 kWh/h
+- **THEN** the capacity fee and the capacity fee guarantee are 3,435.84 (100%), the VAT 687.17 and the total guarantee 4,123.01
+
+#### Scenario: Entry point
+- **WHEN** the booking is Kulata/Sidirokastron GR>BG, Quarter 2026 Q4, 100,000 kWh/h
+- **THEN** the capacity fee is 109,196.64, the capacity fee guarantee 27,299.16, the VAT 5,459.83 and the total guarantee 32,758.99
+
+#### Scenario: Quarter with a surcharge
+- **WHEN** the booking is Kulata/Sidirokastron BG>GR, Quarter 2026 Q4, 100,000 kWh/h, surcharge 10, not bundled
+- **THEN** the capacity fee is 202,685.74, the capacity fee guarantee 50,671.43, the VAT 10,134.29 and the total guarantee 60,805.72
+
+#### Scenario: Bundled quarter with a surcharge
+- **WHEN** the same booking is bundled
+- **THEN** the capacity fee is still 202,685.74, the capacity fee guarantee 48,368.19 (25% of 184,259.76 × 1.05), the VAT 9,673.64 and the total guarantee 58,041.83
+- **WHEN** a bundled booking has no surcharge
+- **THEN** its amounts equal the same booking not bundled
+
+### Requirement: Description of Bulgartransgaz's rule
+When Bulgartransgaz is the chosen TSO, the tab SHALL show, under the TSO dropdown, a closed expander "How Bulgartransgaz calculates the financial guarantee". The description SHALL be taken from chapter 8 of the General Terms and Conditions to Bulgartransgaz's Harmonized Contract for Access and Natural Gas Transport (approved on 15 September 2026) and SHALL cover:
+- how much (8.9–8.11): booking only up to the available credit limit; the reserved shares 6%, 25%, 70% and 100% of the product's value including VAT and the auction premium; half the premium for bundled capacity; that the tab uses the tariff valid during the product, not on the auction date; and the 20% VAT;
+- the minimum credit limit of EUR 2,500 (8.2), not included in the tab's totals;
+- release (8.12–8.14): within 2 days of the last instalment or payment, and secondary market transfers;
+- if drawn on (7.11, 7.15, 8.15–8.18): after a two-day notice when an invoice is 7 days overdue, restored within 5 working days, else transmission may be interrupted;
+- the forms (8.1, 8.3–8.7, 8.20–8.23): cash deposit in EUR, bank guarantee from an EU bank rated at least B, valid at least 12 months, renewed at least 45 days before it expires, or both; no interest on the deposit.
+
+#### Scenario: Bulgartransgaz description
+- **WHEN** Bulgartransgaz is the chosen TSO
+- **THEN** the tab shows a closed expander "How Bulgartransgaz calculates the financial guarantee" that mentions 6%, 25%, 70%, 100%, half of the auction premium and EUR 2,500

@@ -486,6 +486,10 @@ RATE_PLACEHOLDERS = {money.HUF: "e.g. 400", money.CZK: "e.g. 25"}  # the "<curre
 EUSTREAM_ONLY_COLUMNS = ("Stage", "CEGHIX (EUR/MWh)", "GfON fee", "GfON fee guarantee")
 # Columns only a NET4GAS exit row fills (its variable part's inputs); left out when the list has none.
 NET4GAS_EXIT_COLUMNS = ("OTE index (EUR/MWh)", "CZK per EUR")
+# The column only a Bulgartransgaz row fills (bundled capacity, half the premium); left out when the list has none.
+BUNDLED_COLUMN = "Bundled"
+# The columns of a commodity / volume fee (GCA, FGSZ, NET4GAS); left out when no row of the list has one.
+COMMODITY_COLUMNS = ("Commodity / volume fee", "Commodity / volume fee guarantee")
 
 
 def product_label(instrument: str, selection: dict) -> str:
@@ -513,7 +517,8 @@ def booking_guarantee(table, booking: dict):
         return period
     return guarantee.calculate_guarantee(table, booking["point"], booking["instrument"], *period, booking["capacity"],
                                          booking["unit"], booking["stage"], booking["ceghix"],
-                                         booking.get("surcharge"), booking.get("ote"), booking.get("czk_rate"))
+                                         booking.get("surcharge"), booking.get("ote"), booking.get("czk_rate"),
+                                         booking.get("bundled", False))
 
 
 def surcharge_text(text) -> str:
@@ -539,6 +544,7 @@ def guarantee_record(booking: dict, result) -> dict:
         "Capacity": f"{number_text(money.parse_number(booking['capacity']))} {booking['unit']}",
         "Stage": booking["stage"] or DASH,
         "Surcharge (%)": surcharge_text(booking.get("surcharge")),
+        BUNDLED_COLUMN: ("Yes" if booking.get("bundled") else "No") if guarantee.asks_bundled(point) else DASH,
         "CEGHIX (EUR/MWh)": number_text(guarantee.parse_ceghix(booking["ceghix"])) if booked else DASH,
         "OTE index (EUR/MWh)": typed_number(guarantee.parse_ote(booking.get("ote")), point),
         "CZK per EUR": typed_number(guarantee.parse_czk_rate(booking.get("czk_rate")), point),
@@ -606,6 +612,10 @@ def guarantee_tab(table, catalog: points.Catalog) -> None:
     if stage == guarantee.BOOKED:
         ceghix = st.text_input("CEGHIX (EUR/MWh)", value="", placeholder="e.g. 30.5", key="guar_ceghix")
         st.caption(guarantee.CEGHIX_NOTE)
+    bundled = False  # only Bulgartransgaz counts half the premium of a bundled booking
+    if guarantee.asks_bundled(point):
+        bundled = st.checkbox("Bundled capacity", value=False, key="guar_bundled")
+        st.caption(guarantee.BUNDLED_NOTE)
     ote = czk_rate = None  # only a NET4GAS exit point asks for its variable part's inputs
     if guarantee.asks_variable_inputs(point):
         left, right = st.columns(2)
@@ -619,7 +629,7 @@ def guarantee_tab(table, catalog: points.Catalog) -> None:
     if st.button("Add to list", key="guar_add"):
         booking = {"point": point, "instrument": instrument, "selection": selection, "capacity": capacity,
                    "unit": capacity_unit, "stage": stage, "ceghix": ceghix, "surcharge": surcharge,
-                   "ote": ote, "czk_rate": czk_rate}
+                   "ote": ote, "czk_rate": czk_rate, "bundled": bundled}
         result = booking_guarantee(table, booking)
         if isinstance(result, fee.FeeError):
             st.warning(result.message)
@@ -637,6 +647,10 @@ def guarantee_tab(table, catalog: points.Catalog) -> None:
     hidden = [] if any(b["point"].tso in guarantee.STAGED_TSOS for b in rows) else list(EUSTREAM_ONLY_COLUMNS)
     if not any(guarantee.asks_variable_inputs(b["point"]) for b in rows):
         hidden += NET4GAS_EXIT_COLUMNS
+    if not any(guarantee.asks_bundled(b["point"]) for b in rows):
+        hidden.append(BUNDLED_COLUMN)
+    if all(getattr(r, "commodity_fee", None) is None for r in results):
+        hidden += COMMODITY_COLUMNS
     records = pd.DataFrame([guarantee_record(b, r) for b, r in zip(rows, results)]).drop(columns=hidden)
     event = st.dataframe(records, hide_index=True, on_select="rerun", selection_mode="multi-row", key="guar_table")
     totals_slot = st.empty()  # the total table, filled once the rate boxes below have been read

@@ -9,7 +9,7 @@ import pytest
 
 from core import fee, guarantee, points, tariffs
 from core.guarantee import AUCTION, BOOKED, CEGHIX_MESSAGE, calculate_guarantee
-from core.points import ENTRY, EUSTREAM, EXIT, FGSZ, GCA, NET4GAS, Point
+from core.points import BULGARTRANSGAZ, ENTRY, EUSTREAM, EXIT, FGSZ, GCA, NET4GAS, Point
 
 from .helpers import make_row, make_table
 
@@ -108,9 +108,9 @@ def test_gfon_rounds_half_up_to_cents():
     assert result.gfon_fee == 77
 
 
-def test_eustream_gca_fgsz_and_net4gas_have_a_rule_and_only_eustream_is_staged():
-    assert list(guarantee.GUARANTEE_RULES) == [EUSTREAM, GCA, FGSZ, NET4GAS]
-    assert list(guarantee.GUARANTEE_NOTES) == [EUSTREAM, GCA, FGSZ, NET4GAS]
+def test_every_tso_has_a_rule_and_a_note_and_only_eustream_is_staged():
+    assert list(guarantee.GUARANTEE_RULES) == [EUSTREAM, GCA, FGSZ, NET4GAS, BULGARTRANSGAZ]
+    assert list(guarantee.GUARANTEE_NOTES) == [EUSTREAM, GCA, FGSZ, NET4GAS, BULGARTRANSGAZ]
     assert guarantee.STAGED_TSOS == {EUSTREAM}
 
 
@@ -513,6 +513,101 @@ def test_net4gas_figures_of_the_spec(real):
     assert n4g("SK>CZ", fee.QUARTER, "100000", year=2026, quarter=4) == ("CZK", 114648000, 38216000, 38216000)
     assert n4g("CZ>SK", fee.QUARTER, "100000", surcharge="10", year=2026, quarter=4) == \
         ("CZK", 263508960, 87836320, 87836320)
+
+
+# --- Bulgartransgaz rule (GTC 8.10-8.11: a share of the product's value, plus 20% VAT) -------------
+
+BTG_EIC = "21Z000000000020C"
+BTG_EXIT = Point(BULGARTRANSGAZ, "Test point", "BG>GR", BTG_EIC, EXIT)
+BTG_TABLE = make_table(  # Year 1000, quarters 300, months 100, days 4 EUR per kWh/d (Bulgartransgaz's unit)
+    make_row(eic=BTG_EIC, direction="Exit", operator=BULGARTRANSGAZ, currency="EUR", unit="kWh/d", valid_to=None),
+)
+
+
+def btg_for(instrument, capacity="10", surcharge=None, bundled=False, **selection):
+    start, end = fee.resolve_period(instrument, **selection)
+    return calculate_guarantee(BTG_TABLE, BTG_EXIT, instrument, start, end, capacity, "kWh/d", None, None, surcharge,
+                               bundled=bundled)
+
+
+def btg_amounts(r):
+    return (r.capacity_fee, r.gfon_fee, r.commodity_fee, r.capacity_fee_guarantee, r.gfon_fee_guarantee,
+            r.commodity_fee_guarantee, r.vat, r.total_guarantee)
+
+
+@pytest.mark.parametrize("instrument, selection, amounts", [
+    # 10 kWh/d: a gas year 10,000 EUR -> 6% = 600 + 20% VAT 120; a quarter 3,000 -> 25% = 750 + 150;
+    # a month 1,000 -> 70% = 700 + 140; a day 40 -> 100% = 40 + 8.
+    (fee.GAS_YEAR, dict(gas_year=2026), (1000000, 60000, 12000, 72000)),
+    (fee.QUARTER, dict(year=2026, quarter=4), (300000, 75000, 15000, 90000)),
+    (fee.MONTH, dict(year=2026, month=11), (100000, 70000, 14000, 84000)),
+    (fee.DAY, dict(day=date(2026, 12, 5)), (4000, 4000, 800, 4800)),
+])
+def test_bulgartransgaz_reserves_its_share_plus_vat(instrument, selection, amounts):
+    result = btg_for(instrument, **selection)
+    assert result.currency == "EUR"
+    fee_, reserved, vat, total = amounts
+    assert btg_amounts(result) == (fee_, None, None, reserved, None, None, vat, total)
+
+
+def test_bulgartransgaz_counts_the_full_premium_or_half_of_it_when_bundled():
+    # A quarter at +10%: 3,300 -> 25% = 825 + 165 VAT. Bundled: 3,000 + 5% = 3,150 -> 787.50 + 157.50;
+    # the capacity fee shown still has the full premium.
+    assert btg_amounts(btg_for(fee.QUARTER, surcharge="10", year=2026, quarter=4)) == \
+        (330000, None, None, 82500, None, None, 16500, 99000)
+    assert btg_amounts(btg_for(fee.QUARTER, surcharge="10", bundled=True, year=2026, quarter=4)) == \
+        (330000, None, None, 78750, None, None, 15750, 94500)
+    assert btg_for(fee.QUARTER, bundled=True, year=2026, quarter=4) == btg_for(fee.QUARTER, year=2026, quarter=4)
+
+
+def test_bulgartransgaz_rounds_the_reserve_and_the_vat_half_up_to_cents():
+    # 3 kWh/d, a month in November 2026: 300 EUR -> 70% = 210.00. A day at 0.125 kWh/d: 0.50 EUR -> 0.50, VAT 0.10.
+    # A quarter at 1 kWh/d, +0.01%: 300.03 -> 25% = 75.0075 -> 75.01; VAT 15.002 -> 15.00.
+    assert btg_amounts(btg_for(fee.MONTH, "3", year=2026, month=11))[3:] == (21000, None, None, 4200, 25200)
+    assert btg_for(fee.DAY, "0.125", day=date(2026, 12, 5)).total_guarantee == 60
+    quarter = btg_for(fee.QUARTER, "1", surcharge="0.01", year=2026, quarter=4)
+    assert (quarter.capacity_fee_guarantee, quarter.vat, quarter.total_guarantee) == (7501, 1500, 9001)
+
+
+def test_bundled_is_ignored_for_other_tsos():
+    start, end = fee.resolve_period(fee.QUARTER, year=2026, quarter=4)
+    plain = calculate_guarantee(TABLE, POINT, fee.QUARTER, start, end, "10", "kWh/h", AUCTION, None, "10")
+    bundled = calculate_guarantee(TABLE, POINT, fee.QUARTER, start, end, "10", "kWh/h", AUCTION, None, "10",
+                                  bundled=True)
+    assert plain == bundled
+    assert guarantee.asks_bundled(BTG_EXIT) and not guarantee.asks_bundled(POINT)
+
+
+def test_bulgartransgaz_note_covers_the_rule():
+    note = guarantee.GUARANTEE_NOTES[BULGARTRANSGAZ]
+    for text in ("15 September 2026", "6%", "25%", "70%", "100%", "including VAT", "half of the auction premium",
+                 "20%", "EUR 2,500", "auction date", "5 working days", "45 days", "12 months", "rated at least **B**"):
+        assert text in note
+
+
+def test_bulgartransgaz_figures_of_the_spec(real):
+    table, _ = real
+    catalog = points.build_catalog(table)
+
+    def btg(flow, instrument, capacity, unit="kWh/h", surcharge=None, bundled=False, **selection):
+        point = next(p for p in catalog.singles_of(BULGARTRANSGAZ) if p.name == "Kulata/Sidirokastron"
+                     and p.flow == flow)
+        start, end = fee.resolve_period(instrument, **selection)
+        r = calculate_guarantee(table, point, instrument, start, end, capacity, unit, None, None, surcharge,
+                                bundled=bundled)
+        return r.currency, r.capacity_fee, r.capacity_fee_guarantee, r.vat, r.total_guarantee
+
+    assert len(catalog.singles_of(BULGARTRANSGAZ)) == 13
+    assert btg("BG>GR", fee.QUARTER, "100000", year=2026, quarter=4) == ("EUR", 18425976, 4606494, 921299, 5527793)
+    assert btg("BG>GR", fee.GAS_YEAR, "100000", gas_year=2026) == ("EUR", 49763832, 2985830, 597166, 3582996)
+    assert btg("BG>GR", fee.MONTH, "2400000", "kWh/d", year=2027, month=1) == \
+        ("EUR", 8520648, 5964454, 1192891, 7157345)
+    assert btg("BG>GR", fee.DAY, "100000", day=date(2026, 12, 5)) == ("EUR", 343584, 343584, 68717, 412301)
+    assert btg("GR>BG", fee.QUARTER, "100000", year=2026, quarter=4) == ("EUR", 10919664, 2729916, 545983, 3275899)
+    assert btg("BG>GR", fee.QUARTER, "100000", surcharge="10", year=2026, quarter=4) == \
+        ("EUR", 20268574, 5067143, 1013429, 6080572)
+    assert btg("BG>GR", fee.QUARTER, "100000", surcharge="10", bundled=True, year=2026, quarter=4) == \
+        ("EUR", 20268574, 4836819, 967364, 5804183)
 
 
 # --- Auction surcharge -----------------------------------------------------------------------
