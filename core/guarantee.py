@@ -14,8 +14,8 @@ from fractions import Fraction
 from typing import Callable
 
 from .fee import DAY, GAS_YEAR, MONTH, QUARTER, FeeError, FeeResult, calculate_fee
-from .money import parse_number, round_minor, split_by_weights
-from .points import ENTRY, EUSTREAM, EXIT, FGSZ, GCA, Point
+from .money import CZK, parse_fx_rate, parse_number, rate_message, round_minor, split_by_weights
+from .points import ENTRY, EUSTREAM, EXIT, FGSZ, GCA, NET4GAS, Point
 from .tariffs import TariffTable
 
 AUCTION = "Capacity auction"  # the guarantee covers the capacity fee only
@@ -26,6 +26,10 @@ CEGHIX_MESSAGE = "CEGHIX must be a positive number."
 CEGHIX_NOTE = "Enter the CEGHIX valid on the day before the booking."
 SURCHARGE_MESSAGE = "The surcharge must be a percentage of 0 or more."
 SURCHARGE_NOTE = "The auction surcharge (premium) in %, added to the tariff; leave it blank for none."
+OTE_MESSAGE = "The OTE index must be a positive number."
+OTE_NOTE = "The OTE index in EUR/MWh that NET4GAS uses for the variable part."
+CZK_RATE_MESSAGE = rate_message(CZK)
+CZK_RATE_NOTE = "The CZK per EUR rate that NET4GAS uses for the variable part."
 
 # Products longer than two months, whose guarantee is two months' payment instead of the total.
 TWO_MONTH_INSTRUMENTS = (GAS_YEAR, QUARTER)
@@ -246,11 +250,73 @@ FGSZ_NOTE = """**How FGSZ sets the contractual security** (General Terms and Con
 **Forms** (7.1): a bank guarantee from a bank rated at least BB (S&P, or the Moody's or Fitch equivalent), or a cash deposit, on which FGSZ pays no interest. Additional security (7.3), requested case by case, is not covered here.
 """
 
+# NET4GAS's variable part at exit points, from its price calculator: OTE index (EUR/MWh) x 0.0009 x CZK per EUR
+# x the volume in MWh at full use of the capacity. NET4GAS's calculator leaves it out of the credit exposure.
+NET4GAS_VARIABLE_FACTOR = Fraction("0.0009")
+
+
+def parse_ote(text) -> Fraction | FeeError:
+    """A typed OTE index in EUR/MWh: a positive number, else the OTE message."""
+    try:
+        ote = parse_number(text)
+    except ValueError:
+        return FeeError(OTE_MESSAGE)
+    return ote if ote > 0 else FeeError(OTE_MESSAGE)
+
+
+def parse_czk_rate(text) -> Fraction | FeeError:
+    """A typed CZK per EUR rate: a positive number, else the rate message (a blank box too)."""
+    rate, _ = parse_fx_rate(text, CZK)
+    return FeeError(CZK_RATE_MESSAGE) if rate is None else rate
+
+
+def asks_variable_inputs(point: Point) -> bool:
+    """A NET4GAS exit point, whose variable part needs the OTE index and a CZK per EUR rate."""
+    return point.tso == NET4GAS and point.direction == EXIT
+
+
+def net4gas_variable_fee(result: FeeResult, ote: Fraction, czk_rate: Fraction) -> int:
+    """The variable part in haléře: the volume at full use of the capacity, 24 hours every gas day of the
+    product (kWh/d x days / 1000 = MWh), x OTE index x 0.0009 x CZK per EUR, rounded once."""
+    mwh = result.capacity_kwh_d * sum(line.days for line in result.invoice) / 1000
+    return round_minor(mwh * ote * NET4GAS_VARIABLE_FACTOR * czk_rate, result.currency)
+
+
+def net4gas_guarantee(result: FeeResult, ceghix: Fraction | None = None) -> GuaranteeResult:
+    """NET4GAS, Network Code Annex 1 section 9.i: the transmission risk, the value of one monthly payment for
+    the contracted capacity. A gas year or quarter takes its most expensive month from the invoice; a month or
+    day is invoiced in one line, so it takes the whole fee. The variable part is 0 here (an entry point);
+    `calculate_guarantee` sets it at an exit point. It is not secured, and there is no GfON or VAT."""
+    guarantee = max(line.amount for line in result.invoice)
+    return GuaranteeResult(result, result.total, guarantee, commodity_fee=0)
+
+
+NET4GAS_NOTE = """**How NET4GAS sets the financial security** (Network Code of 7 December 2017, Annex No. 1, Conditions of Financial Eligibility of the Network User)
+
+**How much** (9). NET4GAS does not ask a fixed deposit per contract. The network user must keep its **Credit Exposure**, the maximum possible debt towards NET4GAS less the securities it has provided, at or below the **Credit Limit** NET4GAS assigns to it. The maximum possible debt is the sum of three risks:
+- **Transmission risk** (9.i): the value of the **monthly payment** for all contracted capacities. This is what this tab calculates for each booking: for a **gas year or quarter** the most expensive month of the invoice; for a **month or day** the whole fee, including any auction surcharge.
+- **Daily auction risk** (9.ii): for each auction, the highest price of the user's bids times the lower of the bid capacities and the auctioned capacity. Not included in this tab.
+- **Balancing-transmission risk** (9.iii): the lower of the user's contracted daily capacities at entry or at exit border points (in MWh) × 2 × 1.2 × the average fixed daily price of balancing gas of the previous month (ERO price decision); 0 with an Agreement on Imbalance Settlement. Not included in this tab.
+
+**Variable part** (exit points). Besides the fixed capacity fee, NET4GAS charges at exit points a variable part on the volume at full use of the capacity: **OTE index (EUR/MWh) × 0.0009 × CZK per EUR × volume in MWh** (capacity in kWh/h × 24 × days / 1000). Type the OTE index and the exchange rate NET4GAS uses; it publishes both with its price calculator and updates them monthly. As in NET4GAS's own calculator, the variable part is shown but **not included in the credit exposure**, so it is not in the guarantee. Entry points have no variable part.
+
+**VAT** (9). When NET4GAS must charge Czech VAT (21%), the debt is counted with VAT. This tab adds none, because cross-border transmission for a Hungarian network user is reverse-charged.
+
+**Credit limit** (8). Based on the user's rating and equity: 20%, 10% or 5% of equity for ratings from AAA to AA-, A+ to A- and BBB+ to BBB- (S&P / Fitch, or the Moody's, Creditreform or D&B equivalent), and 0 below that; a higher limit after an extended economic analysis on request. The credit limit lowers the security actually needed; this tab does not subtract it.
+
+**When** (3). The eligibility must be proven **2 calendar months before the first gas day** of the transmission, or **2 business days before** the booking or transfer when it is closer than that, and 2 business days before each auction bid.
+
+**How long** (4, 5, 11). It is kept for the whole contract, always for at least the **next 90 calendar days**, and up to **2 calendar months after the contract ends**. Unused securities are returned within 10 business days of a request once all liabilities are settled.
+
+**Forms** (10): an irrevocable and unconditional bank guarantee, or a guarantee from an eligible guarantor (on NET4GAS's sample), from an issuer rated at least BBB- / Baa3, or a security deposit to NET4GAS's bank account.
+"""
+
 # Each supported TSO's guarantee rules in words, shown on tab 3 when the TSO is chosen.
 GUARANTEE_NOTES: dict[str, str] = {
     EUSTREAM: EUSTREAM_NOTE,
     GCA: GCA_NOTE,
     FGSZ: FGSZ_NOTE,
+    NET4GAS: NET4GAS_NOTE,
 }
 
 
@@ -258,6 +324,7 @@ GUARANTEE_RULES: dict[str, Callable[[FeeResult, Fraction | None], GuaranteeResul
     EUSTREAM: eustream_guarantee,
     GCA: gca_guarantee,
     FGSZ: fgsz_guarantee,
+    NET4GAS: net4gas_guarantee,
 }
 
 # TSOs whose guarantee depends on the stage (and, once booked, on the CEGHIX); tab 3 asks for both only for them.
@@ -280,11 +347,14 @@ def calculate_guarantee(
     stage: str | None,
     ceghix_text=None,
     surcharge_text=None,
+    ote_text=None,
+    czk_rate_text=None,
 ) -> GuaranteeResult | FeeError:
     """The guarantee for one booking at `point` (a TSO in `GUARANTEE_RULES`); `ceghix_text`
     is read only for booked capacity. The auction surcharge (`surcharge_text`, in %) raises the
     capacity fee and so its guarantee, at either stage; the GfON does not depend on it.
-    The stage matters only for a TSO in `STAGED_TSOS`; for the others it and the CEGHIX are ignored."""
+    The stage matters only for a TSO in `STAGED_TSOS`; for the others it and the CEGHIX are ignored.
+    The OTE index and CZK per EUR rate are read only at a NET4GAS exit point, for its variable part."""
     staged = point.tso in STAGED_TSOS
     if staged and stage not in STAGES:
         raise ValueError(f"Unknown stage {stage!r}")
@@ -301,4 +371,13 @@ def calculate_guarantee(
         ceghix = parse_ceghix(ceghix_text)
         if isinstance(ceghix, FeeError):
             return ceghix
-    return replace(rule(result, ceghix), surcharge=surcharge)
+    guarantee = replace(rule(result, ceghix), surcharge=surcharge)
+    if asks_variable_inputs(point):
+        ote = parse_ote(ote_text)
+        if isinstance(ote, FeeError):
+            return ote
+        czk_rate = parse_czk_rate(czk_rate_text)
+        if isinstance(czk_rate, FeeError):
+            return czk_rate
+        guarantee = replace(guarantee, commodity_fee=net4gas_variable_fee(result, ote, czk_rate))
+    return guarantee

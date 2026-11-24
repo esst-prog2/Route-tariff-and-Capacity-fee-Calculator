@@ -9,7 +9,7 @@ import pytest
 
 from core import fee, guarantee, points, tariffs
 from core.guarantee import AUCTION, BOOKED, CEGHIX_MESSAGE, calculate_guarantee
-from core.points import ENTRY, EUSTREAM, EXIT, FGSZ, GCA, Point
+from core.points import ENTRY, EUSTREAM, EXIT, FGSZ, GCA, NET4GAS, Point
 
 from .helpers import make_row, make_table
 
@@ -108,9 +108,9 @@ def test_gfon_rounds_half_up_to_cents():
     assert result.gfon_fee == 77
 
 
-def test_eustream_gca_and_fgsz_have_a_rule_and_only_eustream_is_staged():
-    assert list(guarantee.GUARANTEE_RULES) == [EUSTREAM, GCA, FGSZ]
-    assert list(guarantee.GUARANTEE_NOTES) == [EUSTREAM, GCA, FGSZ]
+def test_eustream_gca_fgsz_and_net4gas_have_a_rule_and_only_eustream_is_staged():
+    assert list(guarantee.GUARANTEE_RULES) == [EUSTREAM, GCA, FGSZ, NET4GAS]
+    assert list(guarantee.GUARANTEE_NOTES) == [EUSTREAM, GCA, FGSZ, NET4GAS]
     assert guarantee.STAGED_TSOS == {EUSTREAM}
 
 
@@ -386,6 +386,133 @@ def test_fgsz_figures_of_the_spec(real):
         (37562771, 0, 12520924, 0, 3380649, 15901573)
     assert fgsz("Csanádpalota", "HU>RO", fee.QUARTER, "100000", surcharge="10", year=2026, quarter=4) == \
         (47698894, 6451776, 15899631, 3443098, 5222537, 24565266)
+
+
+# --- NET4GAS rule (Network Code Annex 1, 9.i: one monthly payment) -----------------------------
+
+N4G_EIC = "21Z000000000061Z"
+N4G_EXIT = Point(NET4GAS, "Test point", "CZ>SK", N4G_EIC, EXIT)
+N4G_TABLE = make_table(  # 2026: Year 1200, quarters 300, months 100, days 4 CZK per kWh/h; 2027: Year 2400
+    make_row(eic=N4G_EIC, direction="Exit", operator=NET4GAS, currency="CZK", unit="kWh/h",
+             valid_from="2026-01-01", valid_to="2026-12-31", prices={"Year": 1200}),
+    make_row(eic=N4G_EIC, direction="Exit", operator=NET4GAS, currency="CZK", unit="kWh/h",
+             valid_from="2027-01-01", valid_to="2027-12-31", prices={"Year": 2400}),
+)
+
+
+def net4gas_for(instrument, capacity, unit="kWh/h", surcharge=None, **selection):
+    start, end = fee.resolve_period(instrument, **selection)
+    return calculate_guarantee(N4G_TABLE, N4G_EXIT, instrument, start, end, capacity, unit, None, None, surcharge,
+                               "100", "25")
+
+
+def net4gas_amounts(r):
+    return (r.capacity_fee, r.gfon_fee, r.commodity_fee, r.capacity_fee_guarantee, r.gfon_fee_guarantee,
+            r.commodity_fee_guarantee, r.vat, r.total_guarantee)
+
+
+def test_net4gas_gas_year_takes_its_most_expensive_month():
+    # 10 kWh/h at an exit point: Oct-Dec 2026 at 1,200 / 12 x 10 = 1,000 each, Jan-Sep 2027 at 2,400 / 12 x 10 = 2,000 each.
+    result = net4gas_for(fee.GAS_YEAR, "10", gas_year=2026)
+    assert result.currency == "CZK"
+    # Variable part: 87.6 MWh x 100 EUR/MWh x 0.0009 x 25 CZK/EUR = 197.10 CZK, shown but not secured.
+    assert net4gas_amounts(result) == (2100000, None, 19710, 200000, None, None, None, 200000)
+
+
+def test_net4gas_quarter_month_and_day():
+    assert net4gas_for(fee.QUARTER, "10", year=2026, quarter=4).capacity_fee_guarantee == 100000  # one third
+    month = net4gas_for(fee.MONTH, "240", "kWh/d", year=2026, month=11)  # 10 kWh/h x 100 = the whole fee
+    assert (month.capacity_fee, month.total_guarantee) == (100000, 100000)
+    day = net4gas_for(fee.DAY, "10", day=date(2026, 12, 5))
+    assert (day.capacity_fee, day.total_guarantee) == (4000, 4000)
+
+
+def test_net4gas_surcharge_raises_the_guarantee():
+    result = net4gas_for(fee.QUARTER, "10", surcharge="10", year=2026, quarter=4)
+    assert (result.capacity_fee, result.total_guarantee) == (330000, 110000)
+
+
+N4G_ENTRY = Point(NET4GAS, "Test point", "SK>CZ", N4G_EIC, ENTRY)
+N4G_TABLE_BOTH = make_table(  # 2026, both directions: months 100 CZK per kWh/h
+    make_row(eic=N4G_EIC, direction="Exit", operator=NET4GAS, currency="CZK", unit="kWh/h",
+             valid_from="2026-01-01", valid_to="2026-12-31"),
+    make_row(eic=N4G_EIC, direction="Entry", operator=NET4GAS, currency="CZK", unit="kWh/h",
+             valid_from="2026-01-01", valid_to="2026-12-31"),
+)
+
+
+def net4gas_variable(point, ote, czk_rate, capacity="10", surcharge=None):
+    start, end = fee.resolve_period(fee.MONTH, year=2026, month=11)
+    return calculate_guarantee(N4G_TABLE_BOTH, point, fee.MONTH, start, end, capacity, "kWh/h", None, None, surcharge,
+                               ote, czk_rate)
+
+
+def test_net4gas_variable_part_at_an_exit_point_is_shown_but_not_secured():
+    # 10 kWh/h in November: 0.24 MWh/d x 30 = 7.2 MWh x 100 EUR/MWh x 0.0009 x 25 CZK/EUR = 16.20 CZK.
+    result = net4gas_variable(N4G_EXIT, "100", "25")
+    assert (result.commodity_fee, result.commodity_fee_guarantee) == (1620, None)
+    assert (result.capacity_fee_guarantee, result.total_guarantee) == (100000, 100000)
+
+
+def test_net4gas_variable_part_ignores_the_surcharge_and_accepts_decimal_commas():
+    # 7.2 MWh x 107.7 x 0.0009 x 24.36 = 17.0008 -> 17.00 CZK. ("107,705" would be read as 107,705, as everywhere.)
+    result = net4gas_variable(N4G_EXIT, "107,7", "24,36", surcharge="10")
+    assert (result.capacity_fee, result.commodity_fee) == (110000, 1700)
+
+
+@pytest.mark.parametrize("ote, rate, message", [
+    ("", "25", guarantee.OTE_MESSAGE), ("0", "25", guarantee.OTE_MESSAGE), ("abc", "25", guarantee.OTE_MESSAGE),
+    ("100", "", guarantee.CZK_RATE_MESSAGE), ("100", "-1", guarantee.CZK_RATE_MESSAGE),
+])
+def test_net4gas_exit_needs_the_ote_index_and_rate(ote, rate, message):
+    assert net4gas_variable(N4G_EXIT, ote, rate) == fee.FeeError(message)
+    assert message in ("The OTE index must be a positive number.", "The CZK per EUR rate must be a positive number.")
+
+
+def test_net4gas_entry_has_no_variable_part_and_needs_no_inputs():
+    result = net4gas_variable(N4G_ENTRY, None, None)
+    assert (result.commodity_fee, result.commodity_fee_guarantee, result.total_guarantee) == (0, None, 100000)
+    assert not guarantee.asks_variable_inputs(N4G_ENTRY) and guarantee.asks_variable_inputs(N4G_EXIT)
+
+
+def test_net4gas_note_covers_the_rule():
+    note = guarantee.GUARANTEE_NOTES[NET4GAS]
+    for text in ("7 December 2017", "Credit Limit", "monthly payment", "most expensive month", "Daily auction risk",
+                 "Balancing-transmission risk", "21%", "reverse-charged", "20%, 10% or 5% of equity",
+                 "2 calendar months before the first gas day", "90 calendar days", "BBB-",
+                 "OTE index (EUR/MWh) × 0.0009 × CZK per EUR", "not included in the credit exposure"):
+        assert text in note
+
+
+def test_net4gas_figures_of_the_spec(real):
+    table, _ = real
+    catalog = points.build_catalog(table)
+
+    def n4g(flow, instrument, capacity, unit="kWh/h", surcharge=None, **selection):
+        return n4g_result(flow, instrument, capacity, unit, surcharge, **selection)[:4]
+
+    def n4g_result(flow, instrument, capacity, unit="kWh/h", surcharge=None, ote="107.705", rate="24.36",
+                   **selection):
+        point = next(p for p in catalog.singles_of(NET4GAS) if p.name == "Lanžhot" and p.flow == flow)
+        start, end = fee.resolve_period(instrument, **selection)
+        r = calculate_guarantee(table, point, instrument, start, end, capacity, unit, None, None, surcharge, ote,
+                                rate)
+        return r.currency, r.capacity_fee, r.capacity_fee_guarantee, r.total_guarantee, r.commodity_fee
+
+    # NET4GAS's calculator: Lanzhot exit, BTS Year, 480 MWh/d -> variable part 413,704.04 CZK (175,200 MWh).
+    assert n4g_result("CZ>SK", fee.GAS_YEAR, "480000", "kWh/d", gas_year=2026)[4] == 41370404
+    assert n4g_result("CZ>SK", fee.QUARTER, "100000", year=2026, quarter=4)[4] == 52138043
+    assert n4g_result("SK>CZ", fee.QUARTER, "100000", ote=None, rate=None, year=2026, quarter=4)[4] == 0
+
+    assert len(catalog.singles_of(NET4GAS)) == 6
+    assert n4g("CZ>SK", fee.QUARTER, "100000", year=2026, quarter=4) == ("CZK", 239553600, 79851200, 79851200)
+    assert n4g("CZ>SK", fee.GAS_YEAR, "100000", gas_year=2026) == ("CZK", 900000000, 76000000, 76000000)
+    assert n4g("CZ>SK", fee.GAS_YEAR, "100000", gas_year=2025) == ("CZK", 1038000000, 130000000, 130000000)
+    assert n4g("CZ>SK", fee.MONTH, "2400000", "kWh/d", year=2027, month=1) == ("CZK", 96820800, 96820800, 96820800)
+    assert n4g("CZ>SK", fee.DAY, "100000", day=date(2026, 12, 5)) == ("CZK", 3549600, 3549600, 3549600)
+    assert n4g("SK>CZ", fee.QUARTER, "100000", year=2026, quarter=4) == ("CZK", 114648000, 38216000, 38216000)
+    assert n4g("CZ>SK", fee.QUARTER, "100000", surcharge="10", year=2026, quarter=4) == \
+        ("CZK", 263508960, 87836320, 87836320)
 
 
 # --- Auction surcharge -----------------------------------------------------------------------

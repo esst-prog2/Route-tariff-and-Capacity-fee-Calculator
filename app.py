@@ -480,9 +480,12 @@ GUARANTEE_AMOUNTS = {
     "Total guarantee": "total_guarantee",
 }
 GUARANTEE_COLUMNS = tuple(GUARANTEE_AMOUNTS)
-GUARANTEE_CURRENCIES = (money.EUR, money.HUF)  # the order of the total rows; another currency would follow
+GUARANTEE_CURRENCIES = (money.EUR, money.HUF, money.CZK)  # the order of the total rows; another would follow
+RATE_PLACEHOLDERS = {money.HUF: "e.g. 400", money.CZK: "e.g. 25"}  # the "<currency> per 1 EUR" boxes
 # Columns only a staged TSO (Eustream) fills; left out of both tables when no row is such a TSO.
 EUSTREAM_ONLY_COLUMNS = ("Stage", "CEGHIX (EUR/MWh)", "GfON fee", "GfON fee guarantee")
+# Columns only a NET4GAS exit row fills (its variable part's inputs); left out when the list has none.
+NET4GAS_EXIT_COLUMNS = ("OTE index (EUR/MWh)", "CZK per EUR")
 
 
 def product_label(instrument: str, selection: dict) -> str:
@@ -510,12 +513,19 @@ def booking_guarantee(table, booking: dict):
         return period
     return guarantee.calculate_guarantee(table, booking["point"], booking["instrument"], *period, booking["capacity"],
                                          booking["unit"], booking["stage"], booking["ceghix"],
-                                         booking.get("surcharge"))
+                                         booking.get("surcharge"), booking.get("ote"), booking.get("czk_rate"))
 
 
 def surcharge_text(text) -> str:
     surcharge = guarantee.parse_surcharge(text)
     return DASH if isinstance(surcharge, fee.FeeError) or surcharge == 0 else number_text(surcharge)
+
+
+def typed_number(value, point) -> str:
+    """A NET4GAS exit row's typed OTE index or rate with thousands commas; "–" for any other row."""
+    if not guarantee.asks_variable_inputs(point) or isinstance(value, fee.FeeError):
+        return DASH
+    return number_text(value)
 
 
 def guarantee_record(booking: dict, result) -> dict:
@@ -530,6 +540,8 @@ def guarantee_record(booking: dict, result) -> dict:
         "Stage": booking["stage"] or DASH,
         "Surcharge (%)": surcharge_text(booking.get("surcharge")),
         "CEGHIX (EUR/MWh)": number_text(guarantee.parse_ceghix(booking["ceghix"])) if booked else DASH,
+        "OTE index (EUR/MWh)": typed_number(guarantee.parse_ote(booking.get("ote")), point),
+        "CZK per EUR": typed_number(guarantee.parse_czk_rate(booking.get("czk_rate")), point),
     }
     if isinstance(result, fee.FeeError):
         return record | {"Currency": ""} | dict.fromkeys(GUARANTEE_COLUMNS, "")
@@ -550,19 +562,22 @@ def guarantee_sums(results) -> dict[str, dict[str, int]]:
             for currency in order}
 
 
-def guarantee_totals(sums: dict[str, dict[str, int]], huf_rate: Fraction | None = None) -> list[dict]:
-    """The total rows: one "Total" row per currency, then, with a HUF per EUR rate, the EUR and HUF totals
-    together in EUR (each column exact, rounded to cents once)."""
+def guarantee_totals(sums: dict[str, dict[str, int]], rates: dict[str, Fraction] | None = None) -> list[dict]:
+    """The total rows: one "Total" row per currency, then, once every non-EUR currency of the list has a rate
+    (units per 1 EUR), all the totals together in EUR (each column exact, rounded to cents once)."""
     rows = [{"": "Total", "Currency": currency} | {column: money.format_amount(amount, currency)
                                                    for column, amount in columns.items()}
             for currency, columns in sums.items()]
-    if huf_rate is not None:
+    rates = rates or {}
+    foreign = [currency for currency in sums if currency != money.EUR]
+    if foreign and all(currency in rates for currency in foreign):
         def in_eur(column: str) -> int:
-            eur = Fraction(sums.get(money.EUR, {}).get(column, 0), 100)
-            huf = Fraction(sums.get(money.HUF, {}).get(column, 0)) / huf_rate
-            return money.round_minor(eur + huf, money.EUR)
+            exact = sum((money.minor_to_major(sums[currency][column], currency) / rates.get(currency, 1)
+                         for currency in sums), Fraction(0))
+            return money.round_minor(exact, money.EUR)
 
-        rows.append({"": f"All in EUR (1 EUR = {number_text(huf_rate)} HUF)", "Currency": money.EUR}
+        label = " = ".join(["1 EUR"] + [f"{number_text(rates[currency])} {currency}" for currency in foreign])
+        rows.append({"": f"All in EUR ({label})", "Currency": money.EUR}
                     | {column: money.format_amount(in_eur(column), money.EUR) for column in GUARANTEE_COLUMNS})
     return rows
 
@@ -591,11 +606,20 @@ def guarantee_tab(table, catalog: points.Catalog) -> None:
     if stage == guarantee.BOOKED:
         ceghix = st.text_input("CEGHIX (EUR/MWh)", value="", placeholder="e.g. 30.5", key="guar_ceghix")
         st.caption(guarantee.CEGHIX_NOTE)
+    ote = czk_rate = None  # only a NET4GAS exit point asks for its variable part's inputs
+    if guarantee.asks_variable_inputs(point):
+        left, right = st.columns(2)
+        ote = left.text_input("OTE index (EUR/MWh)", value="", placeholder="e.g. 107.705", key="guar_ote")
+        left.caption(guarantee.OTE_NOTE)
+        czk_rate = right.text_input("CZK per 1 EUR (variable part)", value="", placeholder="e.g. 24.36",
+                                    key="guar_czk_rate")
+        right.caption(guarantee.CZK_RATE_NOTE)
 
     rows: list[dict] = st.session_state.setdefault(GUARANTEE_ROWS, [])
     if st.button("Add to list", key="guar_add"):
         booking = {"point": point, "instrument": instrument, "selection": selection, "capacity": capacity,
-                   "unit": capacity_unit, "stage": stage, "ceghix": ceghix, "surcharge": surcharge}
+                   "unit": capacity_unit, "stage": stage, "ceghix": ceghix, "surcharge": surcharge,
+                   "ote": ote, "czk_rate": czk_rate}
         result = booking_guarantee(table, booking)
         if isinstance(result, fee.FeeError):
             st.warning(result.message)
@@ -611,20 +635,25 @@ def guarantee_tab(table, catalog: points.Catalog) -> None:
             st.warning(f"{booking['point'].name} {booking['point'].flow}, "
                        f"{product_label(booking['instrument'], booking['selection'])}: {result.message}")
     hidden = [] if any(b["point"].tso in guarantee.STAGED_TSOS for b in rows) else list(EUSTREAM_ONLY_COLUMNS)
+    if not any(guarantee.asks_variable_inputs(b["point"]) for b in rows):
+        hidden += NET4GAS_EXIT_COLUMNS
     records = pd.DataFrame([guarantee_record(b, r) for b, r in zip(rows, results)]).drop(columns=hidden)
     event = st.dataframe(records, hide_index=True, on_select="rerun", selection_mode="multi-row", key="guar_table")
-    totals_slot = st.empty()  # the total table, filled once the HUF rate box below has been read
-    st.caption("Amounts in each row's currency: EUR with cents, HUF in whole forints.")
+    totals_slot = st.empty()  # the total table, filled once the rate boxes below have been read
+    st.caption("Amounts in each row's currency: EUR and CZK with two decimals, HUF in whole forints.")
     sums = guarantee_sums(results)
-    huf_rate = None
-    if money.HUF in sums:
+    rates = {}
+    for currency in sums:
+        if currency == money.EUR:
+            continue
         rate, message = money.parse_fx_rate(
-            st.text_input("HUF per 1 EUR", value="", placeholder="e.g. 400", key="guar_rate_HUF",
-                          help="Type a rate to see the whole list in EUR."), money.HUF)
+            st.text_input(f"{currency} per 1 EUR", value="", placeholder=RATE_PLACEHOLDERS.get(currency, ""),
+                          key=f"guar_rate_{currency}", help="Type a rate to see the whole list in EUR."), currency)
         if message:
             st.warning(message)
-        huf_rate = rate
-    totals = pd.DataFrame(guarantee_totals(sums, huf_rate)).drop(columns=hidden, errors="ignore")  # has no CEGHIX
+        if rate is not None:
+            rates[currency] = rate
+    totals = pd.DataFrame(guarantee_totals(sums, rates)).drop(columns=hidden, errors="ignore")  # has no CEGHIX
     totals_slot.dataframe(totals, hide_index=True)
     if any(guarantee.is_gca_day(b["point"], b["instrument"])
            for b, r in zip(rows, results) if not isinstance(r, fee.FeeError)):

@@ -94,6 +94,7 @@ def format_whole(amount: int) -> str:
 
 EUR = "EUR"
 HUF = "HUF"
+CZK = "CZK"
 
 # Amounts are rounded and split in the currency's smallest shown unit: whole forints, else cents.
 CURRENCY_DECIMALS = {"HUF": 0, "EUR": 2, "RON": 2, "CZK": 2, "PLN": 2}
@@ -102,6 +103,11 @@ CURRENCY_DECIMALS = {"HUF": 0, "EUR": 2, "RON": 2, "CZK": 2, "PLN": 2}
 def round_minor(amount: Fraction, currency: str) -> int:
     """`amount` in minor units (forints, cents, bani, haléře, groszy), rounded half away from zero."""
     return round_whole(amount * 10 ** CURRENCY_DECIMALS[currency])
+
+
+def minor_to_major(minor: int, currency: str) -> Fraction:
+    """Minor units back to an exact amount of the currency: 12345 cents -> 123.45 EUR."""
+    return Fraction(minor, 10 ** CURRENCY_DECIMALS[currency])
 
 
 def format_amount(minor: int, currency: str) -> str:

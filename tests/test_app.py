@@ -571,10 +571,12 @@ MOSONMAGYAROVAR_EXIT = "Mosonmagyaróvár AT>HU"
 
 
 def add_booking(at, instrument="quarter", stage="Booked capacity", capacity="100000", unit="kWh/h", ceghix="30",
-                surcharge="", tso="Eustream", point_label=BALASSAGYARMAT_EXIT, **period):
+                surcharge="", tso="Eustream", point_label=BALASSAGYARMAT_EXIT, ote="107.705", czk_rate="24.36",
+                **period):
     """Fill in tab 3 for `point_label` (Balassagyarmat SK>HU by default) and press Add to list.
     `period` sets the picker keys without their `guar_` prefix (e.g. q_year=2026, quarter=4).
-    The stage and CEGHIX are set only when the TSO asks for them (Eustream)."""
+    The stage and CEGHIX are set only when the TSO asks for them (Eustream), the OTE index and CZK per EUR
+    rate only at a NET4GAS exit point."""
     at.selectbox(key="guar_tso").select(tso).run()
     point = next(s for s in at.selectbox if s.key and s.key.startswith("guar_point_"))
     point.select(next(o for o in point.options if o.startswith(point_label + " ")))
@@ -589,6 +591,9 @@ def add_booking(at, instrument="quarter", stage="Booked capacity", capacity="100
         at.radio(key="guar_stage").set_value(stage).run()
         if stage == "Booked capacity":
             at.text_input(key="guar_ceghix").set_value(ceghix)
+    if "guar_ote" in {t.key for t in at.text_input}:
+        at.text_input(key="guar_ote").set_value(ote)
+        at.text_input(key="guar_czk_rate").set_value(czk_rate)
     at.button(key="guar_add").click().run()
     assert not at.exception, [e.value for e in at.exception]
 
@@ -608,7 +613,7 @@ def select_rows(at, rows):
 
 def test_tab3_offers_eustream_and_shows_the_ceghix_box_only_for_booked_capacity(real_app):
     at = real_app
-    assert at.selectbox(key="guar_tso").options == ["Eustream", "Gas Connect Austria", "FGSZ"]
+    assert at.selectbox(key="guar_tso").options == ["Eustream", "Gas Connect Austria", "FGSZ", "NET4GAS"]
     assert at.selectbox(key="guar_tso").value == "EUSTR"
     eustream_points = at.selectbox(key="guar_point_EUSTR").options
     assert "Balassagyarmat SK>HU (21Z000000000358C)" in eustream_points
@@ -827,6 +832,76 @@ def test_tab3_fgsz_row_eur_and_huf_totals_and_the_combined_eur_total(real_app):
     _, total = guarantee_tables(at)
     assert len(total) == 2
     assert any(w.value == "The HUF per EUR rate must be a positive number." for w in at.warning)
+
+
+LANZHOT_EXIT = "Lanžhot CZ>SK"
+
+
+def test_tab3_net4gas_inputs_and_description(real_app):
+    at = real_app
+    at.selectbox(key="guar_tso").select("NET4GAS").run()
+    options = at.selectbox(key="guar_point_NET4GAS").options
+    assert len(options) == 6 and "Lanžhot CZ>SK (21Z000000000061Z)" in options
+    assert "guar_stage" not in {r.key for r in at.radio}
+    assert "guar_ceghix" not in {t.key for t in at.text_input}
+    assert at.text_input(key="guar_surcharge").value == ""
+    expander = next(e for e in at.expander if e.label == "How NET4GAS calculates the financial guarantee")
+    text = " ".join(m.value for m in expander.markdown)
+    for phrase in ("monthly payment", "most expensive month", "Credit Limit", "21%", "90 calendar days"):
+        assert phrase in text
+
+
+def test_tab3_net4gas_variable_part_inputs_only_at_exit_points(real_app):
+    at = real_app
+    at.selectbox(key="guar_tso").select("NET4GAS").run()
+    at.selectbox(key="guar_point_NET4GAS").select("Lanžhot CZ>SK (21Z000000000061Z)").run()
+    assert at.text_input(key="guar_ote").value == "" and at.text_input(key="guar_czk_rate").value == ""
+    at.text_input(key="guar_capacity").set_value("100000")
+    at.button(key="guar_add").click().run()
+    assert any(w.value == "The OTE index must be a positive number." for w in at.warning)
+    at.text_input(key="guar_ote").set_value("107,705")
+    at.button(key="guar_add").click().run()
+    assert any(w.value == "The CZK per EUR rate must be a positive number." for w in at.warning)
+    assert any(i.value == "Add a booking to start the list." for i in at.info)
+
+    at.selectbox(key="guar_point_NET4GAS").select("Lanžhot SK>CZ (21Z000000000061Z)").run()
+    assert not {"guar_ote", "guar_czk_rate"} & {t.key for t in at.text_input}
+    at.button(key="guar_add").click().run()
+    table, _ = guarantee_tables(at)
+    assert "OTE index (EUR/MWh)" not in table.columns and "CZK per EUR" not in table.columns  # no exit row
+    assert table["Commodity / volume fee"].tolist() == ["0.00"]
+    assert table["Total guarantee"].tolist() == ["382,160.00"]
+
+
+def test_tab3_net4gas_row_czk_total_and_the_combined_eur_total(real_app):
+    at = real_app
+    add_booking(at, q_year=2026, quarter=4)  # Eustream, 280,104.80 EUR
+    add_booking(at, tso="FGSZ", point_label=CSANADPALOTA_EXIT, q_year=2026, quarter=4)  # 22,729,581 HUF
+    add_booking(at, tso="NET4GAS", point_label=LANZHOT_EXIT, q_year=2026, quarter=4)
+    table, total = guarantee_tables(at)
+    assert table.values.tolist()[2] == [
+        "NET4GAS", LANZHOT_EXIT, "Quarter 2026 Q4", "100,000 kWh/h", "–", "–", "–", "107.705", "24.36",
+        "CZK", "2,395,536.00", "–", "521,380.43", "798,512.00", "–", "–", "–", "798,512.00",
+    ]  # 220,800 MWh x 107.705 x 0.0009 x 24.36 = 521,380.43, shown but not secured
+    assert table["OTE index (EUR/MWh)"].tolist()[:2] == ["–", "–"]
+    assert [row[:2] for row in total.values.tolist()] == [["Total", "EUR"], ["Total", "HUF"], ["Total", "CZK"]]
+    assert total.values.tolist()[2][-1] == "798,512.00"
+    assert at.text_input(key="guar_rate_CZK").value == ""
+
+    at.text_input(key="guar_rate_HUF").set_value("400").run()
+    _, total = guarantee_tables(at)
+    assert len(total) == 3  # the CZK rate is still missing: no combined row
+
+    at.text_input(key="guar_rate_CZK").set_value("25").run()
+    _, total = guarantee_tables(at)
+    combined = total.values.tolist()[-1]
+    assert combined[:2] == ["All in EUR (1 EUR = 400 HUF = 25 CZK)", "EUR"]
+    assert combined[-1] == "368,869.23"  # 280,104.80 + 22,729,581 / 400 + 798,512.00 / 25
+
+    at.text_input(key="guar_rate_CZK").set_value("abc").run()
+    _, total = guarantee_tables(at)
+    assert len(total) == 3
+    assert any(w.value == "The CZK per EUR rate must be a positive number." for w in at.warning)
 
 
 def test_tab3_remove_selected_rows_and_clear(real_app):
