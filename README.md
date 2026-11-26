@@ -43,7 +43,7 @@ The project now uses the real tariff data, committed as `data/real/tariffs_real.
 ## Running the MVP
 The app is hosted on Streamlit Community Cloud: **https://route-tariff-and-capacity-fee-calculator.streamlit.app**. It opens the real tariffs by default; another tariff file can be uploaded in the sidebar. If nobody has opened it for a while it shows a "gone to sleep" page; click the button to wake it (about a minute).
 
-The hosted app is for members of the course and asks for a shared password. The password is not in this repository: it is the secret `app_password` in the app's settings on Streamlit Community Cloud (Settings → Secrets, `app_password = "..."`), or the environment variable `APP_PASSWORD`. Where neither is set, as in a local run, the app opens without asking.
+The hosted app is open to anyone with the link. It can be limited with a shared password: the app asks for one only when the secret `app_password` is set in the app's settings on Streamlit Community Cloud (Settings → Secrets, `app_password = "..."`) or the environment variable `APP_PASSWORD` is set. Neither is set at the moment, and the password is never in this repository; a local run opens without asking too.
 
 To run it locally instead:
 ```
