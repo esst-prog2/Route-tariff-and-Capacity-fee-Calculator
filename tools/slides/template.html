@@ -99,11 +99,11 @@ html, body, .reveal-viewport { background: var(--paper); }
 .compare .n { font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
 
 /* 5 · What's next */
-.next { list-style: none; margin: 40px 0 0; padding: 0; counter-reset: n; max-width: 1080px; }
-.next li { counter-increment: n; display: grid; grid-template-columns: 90px 1fr; padding: 26px 0; border-top: 2px solid var(--rule); }
-.next li::before { content: counter(n); font-size: 64px; font-weight: 800; font-stretch: 88%; line-height: 0.9; color: var(--red); }
-.next b { display: block; font-size: 40px; line-height: 1.1; font-weight: 800; font-stretch: 92%; }
-.next span { display: block; font-size: 24px; color: var(--ink-2); margin-top: 8px; }
+.next { list-style: none; margin: 26px 0 0; padding: 0; counter-reset: n; max-width: 1080px; }
+.next li { counter-increment: n; display: grid; grid-template-columns: 90px 1fr; padding: 16px 0; border-top: 2px solid var(--rule); }
+.next li::before { content: counter(n); font-size: 56px; font-weight: 800; font-stretch: 88%; line-height: 0.9; color: var(--red); }
+.next b { display: block; font-size: 34px; line-height: 1.1; font-weight: 800; font-stretch: 92%; }
+.next span { display: block; font-size: 22px; color: var(--ink-2); margin-top: 8px; }
 .tsos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; font-size: 18px; }
 .tsos i { font-style: normal; padding: 3px 10px; border: 1.5px solid var(--ink); background: var(--panel); }
 .tsos i.todo { border-style: dashed; border-color: var(--ink-3); color: var(--ink-3); background: transparent; }
@@ -216,11 +216,13 @@ html, body, .reveal-viewport { background: var(--paper); }
   <p class="kicker">What's next</p>
   <h2>From a homework project to the tool my team uses.</h2>
   <ol class="next">
+    <li><div><b>The Capacity Fee tab for my team</b><span>The capacity fee of any booking, in the operator's own currency, split into the monthly invoices it will send.</span>
+      <div class="tsos"><i>All 21 operators</i><i>EUR · HUF · RON · CZK · PLN</i><i>Monthly invoices</i></div></div></li>
     <li><div><b>The other operators' guarantee rules</b><span>The Bank Guarantee tab knows 5 of the 21 operators. Each rule comes from that operator's own terms.</span>
       <div class="tsos"><i>Eustream</i><i>Gas Connect Austria</i><i>FGSZ</i><i>NET4GAS</i><i>Bulgartransgaz</i><i class="todo">+ 16 more</i></div></div></li>
     <li><div><b>Hand it to the team at work</b><span>So a trader gets the answer alone, in seconds, without asking the system usage team.</span></div></li>
   </ol>
-  <aside class="notes">Two things next. First, the bank guarantee tab: it knows the rules of five operators, and I add the others one by one, each from that operator's own terms. Second, give it to the traders and my team at work, so a trader can get the answer alone, in seconds.</aside>
+  <aside class="notes">Three things next. First, the capacity fee tab for my team: it gives the fee of any booking in the operator's own currency, split into the monthly invoices. Second, the bank guarantee tab: it knows the rules of five operators, and I add the others one by one, each from that operator's own terms. Third, give it to the traders and my team at work, so a trader can get the answer alone, in seconds.</aside>
 </section>
 
 <!-- Closing: the link -->
