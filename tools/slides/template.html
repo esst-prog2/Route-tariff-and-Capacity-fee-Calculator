@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Route Tariff and Capacity Fee Calculator · demo day</title>
+<style>/*{{reset.css}}*/</style>
+<style>/*{{reveal.css}}*/</style>
+<style>
+@font-face { font-family: "Archivo"; src: url("{{font:archivo-latin-wdth.woff2}}") format("woff2-variations"); font-weight: 100 900; font-stretch: 62% 125%;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Archivo"; src: url("{{font:archivo-latin-ext-wdth.woff2}}") format("woff2-variations"); font-weight: 100 900; font-stretch: 62% 125%;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+
+/* The promo page's world: the network map on the wall. Red is the route and the one thing to look at. */
+:root { --paper: #EDF1F3; --panel: #FFFFFF; --sea: #D6E1E7; --ink: #15181A; --ink-2: #3D454B; --ink-3: #535C62;
+  --red: #C8102E; --blue: #1F4E9A; --green: #1E7B45; --rule: #15181A; }
+html, body, .reveal-viewport { background: var(--paper); }
+.reveal { font-family: "Archivo", "Arial Narrow", sans-serif; color: var(--ink); font-size: 30px; line-height: 1.3; }
+.reveal .slides { text-align: left; }
+.reveal .slides > section { padding: 56px 72px 40px; height: 720px; box-sizing: border-box; }
+.reveal .progress { color: var(--red); height: 4px; }
+.reveal .slide-number { background: transparent; color: var(--ink-3); font-family: inherit; font-size: 16px; left: 24px; right: auto; bottom: 14px; }
+.reveal .controls { color: var(--ink-3); }
+.reveal h1, .reveal h2, .reveal p { margin: 0; }
+.reveal strong { font-weight: 700; }
+.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* The label above each slide: which of the five it is */
+.kicker { display: flex; align-items: center; gap: 14px; font-size: 18px; font-weight: 700; font-stretch: 112%;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 18px; }
+.kicker::before { content: ""; width: 14px; height: 14px; border-radius: 50%; background: var(--red); }
+.reveal h2 { font-size: 50px; line-height: 1.08; font-weight: 800; font-stretch: 92%; letter-spacing: -0.01em; max-width: 1100px; }
+.lede { font-size: 28px; color: var(--ink-2); margin-top: 18px; max-width: 1000px; }
+
+/* 1 · For whom, and why */
+.title-name { font-size: 22px; font-weight: 700; font-stretch: 112%; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+.reveal h1 { font-size: 66px; line-height: 1.02; font-weight: 800; font-stretch: 88%; letter-spacing: -0.015em; margin: 14px 0 30px; }
+.who { font-size: 34px; line-height: 1.25; max-width: 1000px; }
+.who strong { color: var(--red); }
+.why { font-size: 28px; line-height: 1.35; color: var(--ink-2); max-width: 1000px; margin-top: 22px; }
+.facts { position: absolute; left: 72px; right: 72px; bottom: 52px; display: grid; grid-template-columns: repeat(4, 1fr);
+  border-top: 2px solid var(--rule); }
+.facts div { padding-top: 12px; }
+.facts b { display: block; font-size: 44px; font-weight: 800; font-stretch: 92%; line-height: 1; }
+.facts span { display: block; font-size: 19px; line-height: 1.3; color: var(--ink-2); margin-top: 6px; }
+
+/* 2 · The demo */
+.demo { display: grid; grid-template-columns: 560px 1fr; gap: 40px; margin-top: 4px; }
+.demo .map { width: 560px; height: 503px; object-fit: cover; border: 2px solid var(--rule); background: #fff; display: block; }
+.route { font-size: 22px; font-weight: 700; font-stretch: 92%; line-height: 1.3; }
+.route .pt { color: var(--red); }
+.booked { font-size: 20px; color: var(--ink-2); margin-top: 6px; }
+.total { margin-top: 22px; }
+.total .label { font-size: 18px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.total .value { font-size: 92px; font-weight: 800; font-stretch: 88%; line-height: 1; color: var(--red); }
+.total .value small { font-size: 30px; font-weight: 700; color: var(--ink); }
+.total .sum { font-size: 20px; color: var(--ink-2); margin-top: 4px; }
+.shot { margin-top: 20px; }
+.shot img { width: 100%; display: block; border: 1px solid #c9d1d6; }
+.cap { font-size: 16px; color: var(--ink-3); margin-top: 8px; }
+
+/* 3 · Why it works */
+.check { display: grid; grid-template-columns: 330px 1fr; gap: 56px; margin-top: 34px; }
+.cells { font-size: 18px; color: var(--ink-2); }
+.cells table { border-collapse: collapse; margin-top: 8px; font-size: 26px; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--panel); }
+.cells td { border: 1px solid #b9c3c9; padding: 6px 14px; text-align: right; }
+.cells td:first-child { text-align: left; color: var(--ink-3); font-size: 18px; }
+.cells tr.sum td { border-top: 2px solid var(--rule); font-weight: 800; }
+.cells p { margin-top: 12px; font-size: 18px; line-height: 1.35; }
+.bars { display: grid; grid-template-columns: 1fr; gap: 22px; }
+.bar .what { font-size: 20px; font-weight: 700; display: flex; justify-content: space-between; }
+.bar .what .when { font-weight: 400; color: var(--ink-2); }
+.bar .track { margin-top: 6px; height: 42px; position: relative; }
+.bar .fill { height: 100%; display: flex; align-items: center; justify-content: flex-end; padding-right: 12px; box-sizing: border-box;
+  font-size: 22px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
+.bar .fill.ink { background: var(--ink-2); }
+.bar .fill.red { background: var(--red); }
+.bar .fill.green { background: var(--green); }
+.bar .tag { white-space: nowrap; position: absolute; top: 0; height: 100%; display: flex; align-items: center; padding-left: 14px; font-size: 20px; font-weight: 700; }
+.bar .tag.red { color: var(--red); }
+.bar .tag.green { color: var(--green); }
+.limit { position: absolute; top: -6px; bottom: -6px; border-left: 2px dashed var(--ink); }
+.foot { position: absolute; left: 72px; right: 72px; bottom: 44px; font-size: 16px; color: var(--ink-3); }
+
+/* 4 · What I learned */
+.learned { display: grid; grid-template-columns: 1fr 470px; gap: 48px; margin-top: 30px; }
+.steps { list-style: none; margin: 0; padding: 0; font-size: 24px; line-height: 1.32; }
+.steps li { display: grid; grid-template-columns: 92px 1fr; gap: 16px; padding: 12px 0; border-top: 1px solid #b9c3c9; }
+.steps li:first-child { border-top: 2px solid var(--rule); }
+.steps .d { font-weight: 700; font-size: 19px; color: var(--ink-2); padding-top: 3px; }
+.quote { background: var(--panel); border-left: 6px solid var(--red); padding: 18px 22px; font-size: 22px; line-height: 1.38; }
+.quote .src { display: block; margin-top: 10px; font-size: 15px; color: var(--ink-3); font-family: Consolas, "Courier New", monospace; }
+.compare { margin-top: 22px; font-size: 19px; color: var(--ink-2); }
+.compare .row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.compare .b { height: 26px; }
+.compare .b.red { background: var(--red); }
+.compare .b.ink { background: var(--ink-2); }
+.compare .n { font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* 5 · What's next */
+.next { list-style: none; margin: 40px 0 0; padding: 0; counter-reset: n; max-width: 1080px; }
+.next li { counter-increment: n; display: grid; grid-template-columns: 90px 1fr; padding: 26px 0; border-top: 2px solid var(--rule); }
+.next li::before { content: counter(n); font-size: 64px; font-weight: 800; font-stretch: 88%; line-height: 0.9; color: var(--red); }
+.next b { display: block; font-size: 40px; line-height: 1.1; font-weight: 800; font-stretch: 92%; }
+.next span { display: block; font-size: 24px; color: var(--ink-2); margin-top: 8px; }
+.tsos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; font-size: 18px; }
+.tsos i { font-style: normal; padding: 3px 10px; border: 1.5px solid var(--ink); background: var(--panel); }
+.tsos i.todo { border-style: dashed; border-color: var(--ink-3); color: var(--ink-3); background: transparent; }
+
+/* Closing */
+.reveal .slides > section.closing { padding-top: 150px; }
+.closing .link { font-size: 40px; font-weight: 800; font-stretch: 92%; color: var(--red); margin-top: 30px; white-space: nowrap; font-size: 36px; }
+.closing .app { font-size: 24px; color: var(--ink-2); margin-top: 14px; }
+.reveal a { color: inherit; text-decoration: none; }
+.reveal a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="reveal"><div class="slides">
+
+<!-- 1 · For whom, and why -->
+<section id="for-whom">
+  <p class="title-name">{{NAME}}</p>
+  <h1>Route Tariff and Capacity&nbsp;Fee Calculator</h1>
+  <p class="who">For <strong>gas traders</strong> who book pipeline capacity at the borders of Central and Eastern Europe.</p>
+  <p class="why">Why: every border has its own operator, price list, currency and products. Today a trader asks the system usage team, who work the cost out by hand from each operator's tariff sheet.</p>
+  <div class="facts">
+    <div><b>21</b><span>pipeline operators</span></div>
+    <div><b>5</b><span>currencies: EUR, HUF, RON, CZK, PLN</span></div>
+    <div><b>4</b><span>products: year, quarter, month, day</span></div>
+    <div><b>0</b><span>free calculators across operators</span></div>
+  </div>
+  <aside class="notes">Who it is for: gas traders. The problem: every border crossing is priced by a different operator, in its own currency and units, with yearly, quarterly, monthly and daily products. Today traders ask our department, and we work it out by hand. Operators publish only their own sheets; there is no free tool across operators.</aside>
+</section>
+
+<!-- 2 · The demo -->
+<section id="demo">
+  <p class="kicker">The demo · a real run, on the real tariffs</p>
+  <div class="demo">
+    <img class="map" src="{{img:map-route.webp}}" alt="The app's map: the route from Bulgaria through Serbia to Hungary, drawn in red between two clicked border points">
+    <div>
+      <p class="route">BG › <span class="pt">Kireevo/Zaychar</span> › RS › <span class="pt">Kiskundorozsma 2</span> › HU</p>
+      <p class="booked">Two clicks on the map · booked 1 Oct 2026 – 31 Mar 2027 · 400 HUF per EUR</p>
+      <div class="total">
+        <p class="label">The whole route costs</p>
+        <p class="value num">3.6957 <small>EUR/MWh</small></p>
+        <p class="sum">Bulgartransgaz + Gastrans + Gastrans + FGSZ, each in its own currency, each with its cheapest mix</p>
+      </div>
+      <div class="shot">
+        <img src="{{img:route-totals.webp}}" alt="The app's route total table: cheapest combination 3.6957, without quarterly products 3.9913, saving 0.2956 EUR/MWh">
+        <p class="cap">Screenshot from the app: quarters instead of months save 0.2956 EUR/MWh.</p>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">I start from Bulgaria and click two border points on the map. The app finds the four network points the gas crosses, picks the cheapest mix of products for each operator, and gives one number: 3.6957 euros per MWh. It also shows what the quarterly products save. The other two tabs give the capacity fee with every monthly invoice, and the bank guarantee five operators ask for.</aside>
+</section>
+
+<!-- 3 · Why it works -->
+<section id="why-it-works">
+  <p class="kicker">Why it works</p>
+  <h2>I wrote down the right answer before any code ran. The agent's code failed it.</h2>
+  <div class="check">
+    <div class="cells">
+      Read by me, in Excel, from the tariff file:
+      <table>
+        <tr><td>Entry · Year</td><td>2447.18</td></tr>
+        <tr><td>Exit · Year</td><td>2652.96</td></tr>
+        <tr class="sum"><td>Yearly product</td><td>5100.14</td></tr>
+      </table>
+      <p>The promise: for a whole gas year, the "cheapest" plan never costs more than the yearly product.</p>
+    </div>
+    <div class="bars">
+      <div class="bar">
+        <p class="what">Yearly product, read by hand <span class="when">the limit</span></p>
+        <div class="track"><div class="fill ink num" style="width:58%">5100.14</div></div>
+      </div>
+      <div class="bar">
+        <p class="what">The app's "cheapest" plan <span class="when">10 Oct, before the fix</span></p>
+        <div class="track"><div class="fill red num" style="width:73.7%">6478.73</div><span class="tag red" style="left:73.7%">test red · 27% too much</span><span class="limit" style="left:58%"></span></div>
+      </div>
+      <div class="bar">
+        <p class="what">The app's plan <span class="when">after the fix</span></p>
+        <div class="track"><div class="fill green num" style="width:58%">5100.14</div><span class="tag green" style="left:58%">test green</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="foot">HUF per kWh/h · gas year 2026/27 · Mosonmagyaróvár AT>HU entry to Kiskundorozsma HU>RS exit · test file. The optimiser never looked at yearly products; now it does, and 481 tests run.</p>
+  <aside class="notes">This is the check where I was in control. Before any code ran, I opened the tariff file in Excel and read the two yearly prices myself: 5100.14 together. That number went into a test. The agent's optimiser said its plan was the cheapest, but it cost 6478.73, 27 percent more, because it never considered yearly products. The test went red, the optimiser was fixed, and now it is green.</aside>
+</section>
+
+<!-- 4 · What I learned -->
+<section id="what-i-learned">
+  <p class="kicker">What I learned</p>
+  <h2>"Cheapest" is a rule of the trade, not of the maths. I had to ask a person.</h2>
+  <div class="learned">
+    <ol class="steps">
+      <li><span class="d">1 Oct</span><span>My teacher's review asked: is it really the cheapest? I opened a spike on <b>1,050</b> bookings.</span></li>
+      <li><span class="d">1 Oct</span><span><b>428</b> of them overpaid. The agent's code only bought the exact days asked for, never the whole month.</span></li>
+      <li><span class="d">3 Oct</span><span>Fixing the code was easy. Whether a trader may pay for days they won't use, only the trade knows. I asked a capacity manager at work.</span></li>
+    </ol>
+    <div>
+      <p class="quote">"It is allowed to overbook capacity … it simply will not be used on the days that do not contain the gas deal."<span class="src">PLANNING_LOG.md · 3 Oct 2026</span></p>
+      <div class="compare">
+        2–31 December, HUF per kWh/h:
+        <div class="row"><span class="b red" style="width:236px"></span><span class="n num">1767.2</span> day by day</div>
+        <div class="row"><span class="b ink" style="width:100px"></span><span class="n num">749.6</span> all of December</div>
+        <div class="row" style="color:var(--red);font-weight:700">136% too much, the worst case</div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">The moment is in my planning log, on 3 October. My teacher asked whether the "cheapest combination" really is the cheapest. A spike over 1,050 bookings showed 428 of them overpaid: booking 2 to 31 December day by day cost more than twice as much as booking the whole of December. The agent could compute both prices, but whether traders may book days they will not use is a rule of the trade, so I asked a capacity manager at work. The answer was yes, and the optimiser now over-books when that is cheaper.</aside>
+</section>
+
+<!-- 5 · What's next -->
+<section id="whats-next">
+  <p class="kicker">What's next</p>
+  <h2>From a homework project to the tool my team uses.</h2>
+  <ol class="next">
+    <li><div><b>The other operators' guarantee rules</b><span>The Bank Guarantee tab knows 5 of the 21 operators. Each rule comes from that operator's own terms.</span>
+      <div class="tsos"><i>Eustream</i><i>Gas Connect Austria</i><i>FGSZ</i><i>NET4GAS</i><i>Bulgartransgaz</i><i class="todo">+ 16 more</i></div></div></li>
+    <li><div><b>Hand it to the team at work</b><span>So a trader gets the answer alone, in seconds, without asking the system usage team.</span></div></li>
+  </ol>
+  <aside class="notes">Two things next. First, the bank guarantee tab: it knows the rules of five operators, and I add the others one by one, each from that operator's own terms. Second, give it to the traders and my team at work, so a trader can get the answer alone, in seconds.</aside>
+</section>
+
+<!-- Closing: the link -->
+<section id="link" class="closing">
+  <p class="title-name">{{NAME}}</p>
+  <h1>Route Tariff and Capacity&nbsp;Fee Calculator</h1>
+  <p class="link"><a href="https://esst-prog2.github.io/Route-tariff-and-Capacity-fee-Calculator/">esst-prog2.github.io/Route-tariff-and-Capacity-fee-Calculator</a></p>
+  <p class="app">The app: <a href="https://route-tariff-and-capacity-fee-calculator.streamlit.app">route-tariff-and-capacity-fee-calculator.streamlit.app</a></p>
+  <aside class="notes">The promo page, the video and the app are at this link.</aside>
+</section>
+
+</div></div>
+<script>/*{{reveal.js}}*/</script>
+<script>/*{{notes.js}}*/</script>
+<script>
+Reveal.initialize({
+  width: 1280, height: 720, margin: 0, minScale: 0.2, maxScale: 2.0,
+  center: false, transition: 'none', backgroundTransition: 'none',
+  controls: true, controlsBackArrows: 'faded', progress: true,
+  slideNumber: 'c/t', hash: true, history: true, showNotes: false,
+  plugins: [ RevealNotes ]
+});
+</script>
+</body>
+</html>
