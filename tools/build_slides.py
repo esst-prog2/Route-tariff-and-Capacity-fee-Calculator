@@ -3,12 +3,14 @@
     python tools/build_slides.py "Your Name"
 
 Reads `tools/slides/template.html` and inlines reveal.js (`tools/slides/vendor/`),
-the Archivo font (`docs/fonts/`) and the screenshots (`tools/slides/*.webp`) into
+the Archivo font (`docs/fonts/`), the demo recording (`tools/slides/demo.mp4`, made by
+`tools/slides/record_demo.mjs`, with its step times in `demo-steps.json`) and its poster into
 `docs/slides/index.html`, which GitHub Pages serves at
 https://esst-prog2.github.io/Route-tariff-and-Capacity-fee-Calculator/slides/
 """
 
 import base64
+import json
 import re
 import sys
 from pathlib import Path
@@ -38,6 +40,8 @@ def build(name: str) -> str:
     html = re.sub(r"/\*\{\{([\w.-]+\.(?:js|css))\}\}\*/", code, html)
     html = re.sub(r"\{\{font:([\w.-]+)\}\}", lambda m: data_uri(ROOT / "docs" / "fonts" / m.group(1), "font/woff2"), html)
     html = re.sub(r"\{\{img:([\w.-]+)\}\}", lambda m: data_uri(SRC / m.group(1), "image/webp"), html)
+    html = re.sub(r"\{\{video:([\w.-]+)\}\}", lambda m: data_uri(SRC / m.group(1), "video/mp4"), html)
+    html = re.sub(r"\{\{json:([\w.-]+)\}\}", lambda m: json.dumps(json.loads((SRC / m.group(1)).read_text(encoding="utf-8"))), html)
     html = html.replace("{{NAME}}", name)
     if "{{" in html and re.search(r"\{\{[\w:.-]+\}\}", html):
         raise ValueError("unfilled placeholder: " + re.search(r"\{\{[\w:.-]+\}\}", html).group(0))

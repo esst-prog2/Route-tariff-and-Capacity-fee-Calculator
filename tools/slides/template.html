@@ -45,20 +45,26 @@ html, body, .reveal-viewport { background: var(--paper); }
 .facts b { display: block; font-size: 44px; font-weight: 800; font-stretch: 92%; line-height: 1; }
 .facts span { display: block; font-size: 19px; line-height: 1.3; color: var(--ink-2); margin-top: 6px; }
 
-/* 2 · The demo */
-.demo { display: grid; grid-template-columns: 560px 1fr; gap: 40px; margin-top: 4px; }
-.demo .map { width: 560px; height: 503px; object-fit: cover; border: 2px solid var(--rule); background: #fff; display: block; }
-.route { font-size: 22px; font-weight: 700; font-stretch: 92%; line-height: 1.3; }
-.route .pt { color: var(--red); }
-.booked { font-size: 20px; color: var(--ink-2); margin-top: 6px; }
-.total { margin-top: 22px; }
-.total .label { font-size: 18px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
-.total .value { font-size: 92px; font-weight: 800; font-stretch: 88%; line-height: 1; color: var(--red); }
-.total .value small { font-size: 30px; font-weight: 700; color: var(--ink); }
-.total .sum { font-size: 20px; color: var(--ink-2); margin-top: 4px; }
-.shot { margin-top: 20px; }
-.shot img { width: 100%; display: block; border: 1px solid #c9d1d6; }
-.cap { font-size: 16px; color: var(--ink-3); margin-top: 8px; }
+/* 2 · The demo: a recording of the app, played one step per "next" */
+.demo { display: grid; grid-template-columns: 640px 1fr; gap: 36px; margin-top: 2px; }
+.demo video { width: 640px; height: 587px; display: block; border: 2px solid var(--rule); background: #fff; object-fit: cover; object-position: top; }
+.step { background: var(--panel); border-left: 6px solid var(--red); padding: 14px 18px 14px; min-height: 120px; box-sizing: border-box; }
+.step .n { font-size: 15px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.step .t { display: block; font-size: 25px; line-height: 1.22; font-weight: 700; margin-top: 4px; }
+.dots { display: flex; gap: 7px; margin-top: 10px; }
+.dots i { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--ink-3); box-sizing: border-box; }
+.dots i.on { background: var(--red); border-color: var(--red); }
+.routes { list-style: none; margin: 22px 0 0; padding: 0; }
+.routes li { padding: 11px 0 12px; border-top: 1.5px solid var(--rule); opacity: 0.28; transition: opacity 300ms ease-out; }
+.routes li.seen { opacity: 1; }
+.routes .r { font-size: 18px; font-weight: 700; line-height: 1.25; }
+.routes .r .pt { color: var(--red); }
+.routes .v { font-size: 40px; font-weight: 800; font-stretch: 88%; line-height: 1.05; margin-top: 4px; visibility: hidden; }
+.routes .v small { font-size: 18px; font-weight: 700; }
+.routes .v em { font-style: normal; font-size: 15px; font-weight: 400; color: var(--ink-2); margin-left: 6px; }
+.routes li.priced .v { visibility: visible; }
+.routes li.now .v { color: var(--red); }
+.demo .cap { font-size: 14px; color: var(--ink-3); margin-top: 10px; line-height: 1.35; }
 
 /* 3 · Why it works */
 .check { display: grid; grid-template-columns: 330px 1fr; gap: 56px; margin-top: 34px; }
@@ -135,24 +141,87 @@ html, body, .reveal-viewport { background: var(--paper); }
 
 <!-- 2 · The demo -->
 <section id="demo">
-  <p class="kicker">The demo · a real run, on the real tariffs</p>
+  <p class="kicker">The demo · a real run of the app, on the real tariffs</p>
   <div class="demo">
-    <img class="map" src="{{img:map-route.webp}}" alt="The app's map: the route from Bulgaria through Serbia to Hungary, drawn in red between two clicked border points">
+    <video id="demo-video" muted playsinline preload="auto" poster="{{img:demo-poster.webp}}" src="{{video:demo.mp4}}"
+      aria-label="Screen recording of the Route Tariff Calculator: three routes are clicked on the map and the app prices each one."></video>
     <div>
-      <p class="route">BG › <span class="pt">Kireevo/Zaychar</span> › RS › <span class="pt">Kiskundorozsma 2</span> › HU</p>
-      <p class="booked">Two clicks on the map · booked 1 Oct 2026 – 31 Mar 2027 · 400 HUF per EUR</p>
-      <div class="total">
-        <p class="label">The whole route costs</p>
-        <p class="value num">3.6957 <small>EUR/MWh</small></p>
-        <p class="sum">Bulgartransgaz + Gastrans + Gastrans + FGSZ, each in its own currency, each with its cheapest mix</p>
-      </div>
-      <div class="shot">
-        <img src="{{img:route-totals.webp}}" alt="The app's route total table: cheapest combination 3.6957, without quarterly products 3.9913, saving 0.2956 EUR/MWh">
-        <p class="cap">Screenshot from the app: quarters instead of months save 0.2956 EUR/MWh.</p>
-      </div>
+      <div class="step" id="demo-step"><span class="n">Step 1 of 6</span><span class="t"></span>
+        <span class="dots"><i></i><i></i><i></i><i></i><i></i><i></i></span></div>
+      <ol class="routes" id="demo-routes">
+        <li><p class="r">BG › <span class="pt">Kireevo/Zaychar</span> › RS › <span class="pt">Kiskundorozsma 2</span> › HU</p>
+          <p class="v num">3.6957 <small>EUR/MWh</small><em>at 400 HUF per EUR</em></p></li>
+        <li><p class="r">NL › <span class="pt">VIP TTF-THE-H</span> › DE › <span class="pt">VIP Brandov-GASPOOL</span> › CZ</p>
+          <p class="v num">3.0177 <small>EUR/MWh</small><em>at 25 CZK per EUR</em></p></li>
+        <li><p class="r">HU › <span class="pt">VIP Bereg</span> › UA › <span class="pt">Uzhgorod/Velké Kapušany</span> › SK</p>
+          <p class="v num">5.4676 <small>EUR/MWh</small><em>at 400 HUF per EUR</em></p></li>
+      </ol>
+      <p class="cap">Booked 1 Oct 2026 – 31 Mar 2027; the cheapest mix of products at every point. A screen recording of the app; only the pointer is drawn in.</p>
     </div>
   </div>
-  <aside class="notes">I start from Bulgaria and click two border points on the map. The app finds the four network points the gas crosses, picks the cheapest mix of products for each operator, and gives one number: 3.6957 euros per MWh. It also shows what the quarterly products save. The other two tabs give the capacity fee with every monthly invoice, and the bank guarantee five operators ask for.</aside>
+  <p><span class="fragment demo-step"></span><span class="fragment demo-step"></span><span class="fragment demo-step"></span><span class="fragment demo-step"></span><span class="fragment demo-step"></span><span class="fragment demo-step"></span></p>
+  <script>
+  (function () {
+    // Every "next" plays one step of the recording and stops at its end (like the course's example deck).
+    var TIMES = {{json:demo-steps.json}}.steps;   // [start, end] of each step, in seconds
+    var TEXT = [
+      'Start in Bulgaria. Click two border points on the map.',
+      'Type the HUF rate. The app prices the whole route.',
+      'Now from the Netherlands: choose NL, click two points.',
+      'Type a CZK rate for the Czech operator.',
+      'Hungary to Slovakia, through Ukraine.',
+      'Type the HUF rate. Three routes, three answers.'
+    ];
+    var ROUTE_OF = [0, 0, 1, 1, 2, 2];             // which route each step works on
+    var v = document.getElementById('demo-video');
+    var slide = v.closest('section');
+    var box = document.getElementById('demo-step');
+    var dots = box.querySelectorAll('.dots i');
+    var rows = document.querySelectorAll('#demo-routes li');
+    var stopAt = 0, playing = 0;
+
+    // done: how many steps are finished (0-6); priced: whether the last step's total is shown yet
+    function show(done, priced) {
+      var i = Math.max(0, done - 1);
+      box.querySelector('.n').textContent = done ? 'Step ' + done + ' of 6' : 'Press next to start';
+      box.querySelector('.t').textContent = TEXT[i];
+      dots.forEach(function (d, k) { d.classList.toggle('on', k < done); });
+      rows.forEach(function (r, k) {
+        var total = 2 * k + 2;                      // the step that prices route k
+        r.classList.toggle('seen', done > 0 && ROUTE_OF[i] >= k);
+        r.classList.toggle('priced', done > total || (done === total && priced));
+        r.classList.toggle('now', done === total && priced);
+      });
+    }
+    function watch() {
+      if (v.paused) return;
+      if (v.currentTime >= stopAt) { v.pause(); v.currentTime = stopAt; show(playing, true); return; }
+      requestAnimationFrame(watch);
+    }
+    function go(done, play) {                      // play: play the last finished step now
+      v.pause();
+      playing = done;
+      if (done === 0) { show(0, false); v.currentTime = TIMES[0][0]; return; }
+      stopAt = TIMES[done - 1][1];
+      if (play) {
+        show(done, false);
+        v.currentTime = TIMES[done - 1][0];
+        var p = v.play();
+        if (p && p.then) p.then(function () { requestAnimationFrame(watch); }, function () { v.currentTime = stopAt; show(done, true); });
+        else requestAnimationFrame(watch);
+      } else { show(done, true); v.currentTime = stopAt; }
+    }
+    function state() { return slide.querySelectorAll('.demo-step.visible').length; }
+    document.addEventListener('DOMContentLoaded', function () {
+      Reveal.on('fragmentshown', function (e) { if (slide.contains(e.fragment)) go(state(), true); });
+      Reveal.on('fragmenthidden', function (e) { if (slide.contains(e.fragment)) go(state(), false); });
+      Reveal.on('slidechanged', function (e) { if (e.currentSlide === slide) go(state(), false); else v.pause(); });
+      Reveal.on('ready', function (e) { if (e.currentSlide === slide) go(state(), false); });
+    });
+    show(0, false);
+  })();
+  </script>
+  <aside class="notes">A real run of the app, recorded. Each press plays one step. Bulgaria to Hungary through Serbia: two clicks on the map, type the forint rate, and the whole route costs 3.6957 euros per MWh, with the cheapest mix of products at every point. The Netherlands to Czechia, through Germany: 3.0177 with a koruna rate. Hungary to Slovakia through Ukraine: 5.4676. Each route crosses four network points of different operators, each with its own currency and products, and the app prices it in seconds.</aside>
 </section>
 
 <!-- 3 · Why it works -->
