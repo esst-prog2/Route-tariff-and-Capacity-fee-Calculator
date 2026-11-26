@@ -156,7 +156,7 @@ html, body, .reveal-viewport { background: var(--paper); }
         <li><p class="r">HU › <span class="pt">VIP Bereg</span> › UA › <span class="pt">Uzhgorod/Velké Kapušany</span> › SK</p>
           <p class="v num">5.4676 <small>EUR/MWh</small><em>at 400 HUF per EUR</em></p></li>
       </ol>
-      <p class="cap">Booked 1 Oct 2026 – 31 Mar 2027; the cheapest mix of products at every point. A screen recording of the app; only the pointer is drawn in.</p>
+      <p class="cap">Booked 1 Oct 2026 – 31 Mar 2027; the cheapest mix of products at every point. A screen recording of the app, played at 2× speed; only the pointer is drawn in.</p>
     </div>
   </div>
   <p><span class="fragment demo-step"></span><span class="fragment demo-step"></span><span class="fragment demo-step"></span><span class="fragment demo-step"></span><span class="fragment demo-step"></span><span class="fragment demo-step"></span></p>
@@ -174,6 +174,8 @@ html, body, .reveal-viewport { background: var(--paper); }
     ];
     var ROUTE_OF = [0, 0, 1, 1, 2, 2];             // which route each step works on
     var v = document.getElementById('demo-video');
+    var SPEED = 2;                                 // the recording plays at 2x speed
+    v.defaultPlaybackRate = SPEED; v.playbackRate = SPEED;
     var slide = v.closest('section');
     var box = document.getElementById('demo-step');
     var dots = box.querySelectorAll('.dots i');
@@ -206,6 +208,7 @@ html, body, .reveal-viewport { background: var(--paper); }
       if (play) {
         show(done, false);
         v.currentTime = TIMES[done - 1][0];
+        v.playbackRate = SPEED;
         var p = v.play();
         if (p && p.then) p.then(function () { requestAnimationFrame(watch); }, function () { v.currentTime = stopAt; show(done, true); });
         else requestAnimationFrame(watch);
